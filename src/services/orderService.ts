@@ -13,6 +13,7 @@ import {
 } from "../models/order";
 import { bulkUpdateStock } from "./ingredientService";
 import { getProductById } from "./productService";
+import { sendOrderStatusNotification } from "./notificationService";
 import { HttpError } from "../utils/httpError";
 import { listTenants } from "./tenantService";
 
@@ -127,6 +128,28 @@ export const listPendingOrders = async (tenantId: string): Promise<Order[]> => {
   return snapshot.docs.map(mapSnapshotToOrder);
 };
 
+export const getPendingOrdersByDate = async (
+  tenantId: string,
+  date: string,
+): Promise<Order[]> => {
+  const startOfDay = new Date(`${date}T00:00:00.000Z`).toISOString();
+  const endOfDay = new Date(`${date}T23:59:59.999Z`).toISOString();
+
+  // Estados finales (no pendientes)
+  const finalStatuses: OrderStatus[] = ["entregado", "cancelado"];
+
+  const snapshot = await getCollection(tenantId)
+    .where("createdAt", ">=", startOfDay)
+    .where("createdAt", "<=", endOfDay)
+    .orderBy("createdAt", "desc")
+    .get();
+
+  // Filtrar los pedidos que NO están en estados finales
+  return snapshot.docs
+    .map(mapSnapshotToOrder)
+    .filter((order) => !finalStatuses.includes(order.status));
+};
+
 export const getOrderById = async (
   tenantId: string,
   id: string,
@@ -203,6 +226,7 @@ export const updateOrder = async (
   }
 
   const currentData = doc.data() as OrderDocument;
+  const previousStatus = currentData.status;
 
   // Validar transiciones de estado
   if (payload.status) {
@@ -227,10 +251,20 @@ export const updateOrder = async (
   await docRef.update(updateData);
   const updatedDoc = await docRef.get();
 
-  return {
+  const updatedOrder: Order = {
     id: updatedDoc.id,
     ...(updatedDoc.data() as OrderDocument),
   };
+
+  // Enviar notificación si cambió el estado
+  if (payload.status && payload.status !== previousStatus) {
+    // No bloquear la respuesta por la notificación
+    sendOrderStatusNotification(updatedOrder, payload.status).catch(() => {
+      // El error ya se loguea en el servicio de notificaciones
+    });
+  }
+
+  return updatedOrder;
 };
 
 export const confirmOrder = async (

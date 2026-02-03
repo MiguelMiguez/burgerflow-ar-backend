@@ -10,7 +10,7 @@ import {
   SalesReport,
   ReportPeriod,
 } from "../models/cashRegister";
-import { getOrderStats } from "./orderService";
+import { getOrderStats, getPendingOrdersByDate } from "./orderService";
 import { HttpError } from "../utils/httpError";
 
 const CASH_REGISTERS_COLLECTION = "cashRegisters";
@@ -84,6 +84,18 @@ export const closeCashRegister = async (
   const existingClose = await getCashRegisterByDate(tenantId, date);
   if (existingClose) {
     throw new HttpError(400, `Ya existe un cierre de caja para el ${date}.`);
+  }
+
+  // Verificar si hay pedidos pendientes (no entregados ni cancelados)
+  const pendingOrders = await getPendingOrdersByDate(tenantId, date);
+  if (pendingOrders.length > 0) {
+    const pendingCount = pendingOrders.length;
+    const orderIds = pendingOrders.slice(0, 5).map(o => `#${o.id.slice(-6).toUpperCase()}`).join(", ");
+    const moreText = pendingCount > 5 ? ` y ${pendingCount - 5} más` : "";
+    throw new HttpError(
+      400,
+      `No se puede cerrar la caja. Hay ${pendingCount} pedido(s) sin entregar o cancelar: ${orderIds}${moreText}.`
+    );
   }
 
   // Obtener estadísticas del día

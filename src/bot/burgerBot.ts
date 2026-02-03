@@ -539,7 +539,9 @@ const handleOrderConfirmation = async (
   }
 
   try {
-    const customerPhone = sanitizePhoneNumber(message.from);
+    // Guardar el chatId completo para poder enviar mensajes de vuelta
+    // message.from puede ser LID (xxx@lid) o número (xxx@c.us)
+    const customerPhone = message.from;
 
     // Construir items del pedido
     const items: OrderItem[] = state.cart.map((cartItem) => {
@@ -550,15 +552,21 @@ const handleOrderConfirmation = async (
       const unitPrice = cartItem.product.price + extrasTotal;
       const itemTotal = unitPrice * cartItem.quantity;
 
-      return {
+      const item: OrderItem = {
         productId: cartItem.product.id,
         productName: cartItem.product.name,
         quantity: cartItem.quantity,
         unitPrice,
         customizations: cartItem.customizations,
         itemTotal,
-        notes: cartItem.notes,
       };
+
+      // Solo agregar notes si tiene valor
+      if (cartItem.notes) {
+        item.notes = cartItem.notes;
+      }
+
+      return item;
     });
 
     const deliveryCost = state.orderType === "delivery" ? 500 : 0; // Placeholder
@@ -569,10 +577,14 @@ const handleOrderConfirmation = async (
       customerPhone,
       items,
       orderType: state.orderType || "pickup",
-      deliveryAddress: state.deliveryAddress,
-      deliveryCost: state.orderType === "delivery" ? deliveryCost : undefined,
+      deliveryCost: state.orderType === "delivery" ? deliveryCost : 0,
       paymentMethod: state.paymentMethod || "efectivo",
     };
+
+    // Solo agregar deliveryAddress si es delivery y tiene valor
+    if (state.orderType === "delivery" && state.deliveryAddress) {
+      orderInput.deliveryAddress = state.deliveryAddress;
+    }
 
     const order = await createOrder(orderInput);
 

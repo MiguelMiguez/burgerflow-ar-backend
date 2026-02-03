@@ -1,0 +1,157 @@
+import type { Client } from "whatsapp-web.js";
+import { getWhatsappClient } from "../bot/burgerBot";
+import { logger } from "../utils/logger";
+import type { Order, OrderStatus } from "../models/order";
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type WhatsappClient = Client & { sendMessage: (chatId: string, message: string) => Promise<any> };
+
+const STATUS_MESSAGES: Record<OrderStatus, (order: Order) => string> = {
+  pendiente: (order) =>
+    `📋 *Pedido #${order.id.slice(-6).toUpperCase()} recibido*\n\n` +
+    `Hola ${order.customerName}! Tu pedido está siendo revisado.\n` +
+    `Te avisaremos cuando sea confirmado. 🍔`,
+
+  confirmado: (order) =>
+    `✅ *Pedido #${order.id.slice(-6).toUpperCase()} confirmado*\n\n` +
+    `¡Buenas noticias, ${order.customerName}!\n` +
+    `Tu pedido ha sido confirmado y pronto comenzaremos a prepararlo. 👨‍🍳`,
+
+  en_preparacion: (order) =>
+    `👨‍🍳 *Pedido #${order.id.slice(-6).toUpperCase()} en preparación*\n\n` +
+    `${order.customerName}, ya estamos cocinando tu pedido.\n` +
+    `¡Pronto estará listo! 🔥`,
+
+  listo: (order) => {
+    if (order.orderType === "delivery") {
+      return (
+        `🎉 *Pedido #${order.id.slice(-6).toUpperCase()} listo*\n\n` +
+        `${order.customerName}, tu pedido está listo y esperando al repartidor.\n` +
+        `¡En breve saldrá para tu domicilio! 🏍️`
+      );
+    }
+    return (
+      `🎉 *Pedido #${order.id.slice(-6).toUpperCase()} listo*\n\n` +
+      `${order.customerName}, tu pedido está listo para retirar.\n` +
+      `¡Te esperamos! 📍`
+    );
+  },
+
+  en_camino: (order) =>
+    `🏍️ *Pedido #${order.id.slice(-6).toUpperCase()} en camino*\n\n` +
+    `${order.customerName}, tu pedido ya salió.\n` +
+    `Dirección: ${order.deliveryAddress || "No especificada"}\n\n` +
+    `¡Estará llegando pronto! 📦`,
+
+  entregado: (order) =>
+    `🎊 *Pedido #${order.id.slice(-6).toUpperCase()} entregado*\n\n` +
+    `¡Gracias por tu compra, ${order.customerName}!\n` +
+    `Esperamos que disfrutes tu comida. 🍔\n\n` +
+    `¡Hasta la próxima! 👋`,
+
+  cancelado: (order) =>
+    `❌ *Pedido #${order.id.slice(-6).toUpperCase()} cancelado*\n\n` +
+    `${order.customerName}, lamentamos informarte que tu pedido fue cancelado.\n\n` +
+    `Si tienes alguna consulta, no dudes en escribirnos. 📞`,
+};
+
+/**
+ * Obtiene el chatId correcto para enviar mensajes
+ * Si ya es un chatId completo (xxx@lid o xxx@c.us) lo usa directamente
+ * Si es solo un número, lo formatea como @c.us
+ */
+const getChatId = (phone: string): string => {
+  // Si ya tiene formato de chatId (termina en @lid o @c.us), usarlo directamente
+  if (phone.includes("@")) {
+    return phone;
+  }
+
+  // Formatear como número de teléfono tradicional
+  let cleaned = phone.replace(/\D/g, "");
+
+  // Si ya tiene el formato completo, usarlo directamente
+  if (cleaned.length >= 12 && cleaned.startsWith("54")) {
+    return `${cleaned}@c.us`;
+  }
+
+  // Si tiene 10 dígitos (formato argentino sin código de país), agregar 54
+  if (cleaned.length === 10) {
+    cleaned = `54${cleaned}`;
+  }
+
+  // Si tiene 11 dígitos y empieza con 9, agregar 54 (celular con 9)
+  if (cleaned.length === 11 && cleaned.startsWith("9")) {
+    cleaned = `54${cleaned}`;
+  }
+
+  return `${cleaned}@c.us`;
+};
+
+/**
+ * Envía una notificación de WhatsApp al cliente sobre el estado de su pedido
+ */
+export const sendOrderStatusNotification = async (
+  order: Order,
+  newStatus: OrderStatus,
+): Promise<boolean> => {
+  const client = getWhatsappClient() as WhatsappClient | null;
+
+  if (!client) {
+    logger.warn(
+      `No se pudo enviar notificación - Cliente de WhatsApp no disponible`,
+    );
+    return false;
+  }
+
+  const messageGenerator = STATUS_MESSAGES[newStatus];
+  if (!messageGenerator) {
+    logger.warn(`No hay mensaje configurado para el estado: ${newStatus}`);
+    return false;
+  }
+
+  // Crear orden temporal con el nuevo estado para generar el mensaje
+  const orderWithNewStatus = { ...order, status: newStatus };
+  const message = messageGenerator(orderWithNewStatus);
+
+  const chatId = getChatId(order.customerPhone);
+
+  try {
+    await client.sendMessage(chatId, message);
+    logger.info(
+      `Notificación enviada a ${order.customerPhone} - Pedido #${order.id.slice(-6)} -> ${newStatus}`,
+    );
+    return true;
+  } catch (error) {
+    logger.error(
+      `Error al enviar notificación a ${order.customerPhone}`,
+      error,
+    );
+    return false;
+  }
+};
+
+/**
+ * Envía un mensaje personalizado a un número de teléfono
+ */
+export const sendWhatsappMessage = async (
+  phone: string,
+  message: string,
+): Promise<boolean> => {
+  const client = getWhatsappClient() as WhatsappClient | null;
+
+  if (!client) {
+    logger.warn(`No se pudo enviar mensaje - Cliente de WhatsApp no disponible`);
+    return false;
+  }
+
+  const chatId = getChatId(phone);
+
+  try {
+    await client.sendMessage(chatId, message);
+    logger.info(`Mensaje enviado a ${phone}`);
+    return true;
+  } catch (error) {
+    logger.error(`Error al enviar mensaje a ${phone}`, error);
+    return false;
+  }
+};

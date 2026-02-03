@@ -160,16 +160,20 @@ export const updateStock = async (
 
   await docRef.update({ stock: newStock });
 
-  // Registrar movimiento
+  // Registrar movimiento - solo incluir orderId si tiene valor
   const movementDoc: StockMovementDocument = {
     tenantId,
     ingredientId,
     type,
     quantity,
     reason,
-    orderId,
     createdAt: new Date().toISOString(),
   };
+
+  // Solo agregar orderId si tiene valor (evitar undefined en Firestore)
+  if (orderId) {
+    movementDoc.orderId = orderId;
+  }
 
   await getMovementsCollection(tenantId).add(movementDoc);
 
