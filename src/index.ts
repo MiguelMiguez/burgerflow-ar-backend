@@ -1,7 +1,7 @@
 import app from "./app";
 import env from "./config/env";
 import { getFirestore } from "./config/firebase";
-import { startWhatsappBot } from "./bot/whatsappBot";
+import { startWhatsappBot } from "./bot/burgerBot";
 import { logger } from "./utils/logger";
 
 const start = async (): Promise<void> => {
@@ -16,7 +16,7 @@ const start = async (): Promise<void> => {
       startWhatsappBot();
     } else {
       logger.info(
-        "Bot de WhatsApp deshabilitado. Define WHATSAPP_ENABLED=true para activarlo."
+        "Bot de WhatsApp deshabilitado. Define WHATSAPP_ENABLED=true para activarlo.",
       );
     }
   } catch (error) {

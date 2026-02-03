@@ -1,0 +1,234 @@
+import { NextFunction, Request, Response } from "express";
+import {
+  createProduct,
+  deleteProduct,
+  getProductById,
+  listAvailableProducts,
+  listProducts,
+  listProductsByCategory,
+  toggleProductAvailability,
+  updateProduct,
+} from "../services/productService";
+import {
+  CreateProductInput,
+  UpdateProductInput,
+  ProductCategory,
+} from "../models/product";
+import { HttpError } from "../utils/httpError";
+import { logger } from "../utils/logger";
+
+const getTenantId = (req: Request): string => {
+  const tenantId = req.params.tenantId || req.headers["x-tenant-id"];
+  if (!tenantId || typeof tenantId !== "string") {
+    throw new HttpError(400, "Se requiere el identificador del tenant.");
+  }
+  return tenantId;
+};
+
+const sanitizeProductPayload = (
+  payload: Partial<CreateProductInput>,
+): Partial<CreateProductInput> => {
+  const normalized: Partial<CreateProductInput> = {};
+
+  if (payload.name !== undefined) {
+    const name = payload.name.trim();
+    if (name.length === 0) {
+      throw new HttpError(400, "El producto debe incluir un nombre.");
+    }
+    normalized.name = name;
+  }
+
+  if (payload.description !== undefined) {
+    normalized.description = payload.description.trim();
+  }
+
+  if (payload.price !== undefined) {
+    const price = Number(payload.price);
+    if (!Number.isFinite(price) || price < 0) {
+      throw new HttpError(
+        400,
+        "El precio debe ser un número mayor o igual a 0.",
+      );
+    }
+    normalized.price = Number(price.toFixed(2));
+  }
+
+  if (payload.image !== undefined) {
+    normalized.image = payload.image;
+  }
+
+  if (payload.category !== undefined) {
+    normalized.category = payload.category;
+  }
+
+  if (payload.ingredients !== undefined) {
+    normalized.ingredients = payload.ingredients;
+  }
+
+  if (payload.available !== undefined) {
+    normalized.available = payload.available;
+  }
+
+  return normalized;
+};
+
+export const handleListProducts = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const tenantId = getTenantId(req);
+    const { available, category } = req.query;
+
+    let products;
+
+    if (category && typeof category === "string") {
+      products = await listProductsByCategory(
+        tenantId,
+        category as ProductCategory,
+      );
+    } else if (available === "true") {
+      products = await listAvailableProducts(tenantId);
+    } else {
+      products = await listProducts(tenantId);
+    }
+
+    res.json(products);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const handleGetProduct = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const tenantId = getTenantId(req);
+    const { id } = req.params;
+
+    if (!id) {
+      throw new HttpError(400, "Se requiere el id del producto.");
+    }
+
+    const product = await getProductById(tenantId, id);
+    res.json(product);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const handleCreateProduct = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const tenantId = getTenantId(req);
+    const sanitized = sanitizeProductPayload(req.body);
+
+    if (!sanitized.name) {
+      throw new HttpError(400, "El producto debe incluir un nombre.");
+    }
+
+    if (sanitized.price === undefined) {
+      throw new HttpError(400, "El producto debe incluir un precio.");
+    }
+
+    if (!sanitized.category) {
+      throw new HttpError(400, "El producto debe incluir una categoría.");
+    }
+
+    const payload: CreateProductInput = {
+      ...(sanitized as CreateProductInput),
+      tenantId,
+      ingredients: sanitized.ingredients || [],
+    };
+
+    const product = await createProduct(payload);
+    logger.info(`Producto creado: ${product.name} (${product.id})`);
+    res.status(201).json(product);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const handleUpdateProduct = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const tenantId = getTenantId(req);
+    const { id } = req.params;
+
+    if (!id) {
+      throw new HttpError(400, "Se requiere el id del producto.");
+    }
+
+    const sanitized = sanitizeProductPayload(req.body);
+
+    if (Object.keys(sanitized).length === 0) {
+      throw new HttpError(
+        400,
+        "Se requiere al menos un campo para actualizar.",
+      );
+    }
+
+    const product = await updateProduct(
+      tenantId,
+      id,
+      sanitized as UpdateProductInput,
+    );
+    logger.info(`Producto actualizado: ${product.name} (${product.id})`);
+    res.json(product);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const handleDeleteProduct = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const tenantId = getTenantId(req);
+    const { id } = req.params;
+
+    if (!id) {
+      throw new HttpError(400, "Se requiere el id del producto.");
+    }
+
+    await deleteProduct(tenantId, id);
+    logger.info(`Producto desactivado (${id})`);
+    res.status(204).send();
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const handleToggleProductAvailability = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const tenantId = getTenantId(req);
+    const { id } = req.params;
+
+    if (!id) {
+      throw new HttpError(400, "Se requiere el id del producto.");
+    }
+
+    const product = await toggleProductAvailability(tenantId, id);
+    logger.info(
+      `Producto ${product.available ? "activado" : "desactivado"}: ${product.name}`,
+    );
+    res.json(product);
+  } catch (error) {
+    next(error);
+  }
+};

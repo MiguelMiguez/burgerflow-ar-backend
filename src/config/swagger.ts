@@ -1,13 +1,12 @@
 const swaggerDocument = {
   openapi: "3.0.3",
   info: {
-    title: "Booking Bot API",
-    version: "1.0.0",
+    title: "BurgerFlow API",
+    version: "2.0.0",
     description:
-      "Documentación de la API utilizada por el panel de Booking Bot. Permite administrar turnos y servicios disponibles para el asistente de WhatsApp.",
+      "API para el sistema de pedidos de hamburguesas por WhatsApp. Permite administrar productos, pedidos, stock de ingredientes, deliverys y cierres de caja.",
     contact: {
-      name: "Booking Bot",
-      url: "https://booking-bot-wpp.web.app",
+      name: "BurgerFlow",
     },
   },
   servers: [
@@ -15,25 +14,15 @@ const swaggerDocument = {
       url: "http://localhost:3000/api",
       description: "Entorno local",
     },
-    {
-      url: "https://booking-bot-lhrx.onrender.com/api",
-      description: "Producción",
-    },
   ],
   tags: [
-    {
-      name: "Health",
-      description: "Monitoreo y estado del servicio.",
-    },
-    {
-      name: "Bookings",
-      description:
-        "Administración de turnos (creación, listado y eliminación).",
-    },
-    {
-      name: "Services",
-      description: "Administración de servicios ofrecidos en el bot.",
-    },
+    { name: "Tenants", description: "Administración de hamburgueserías" },
+    { name: "Products", description: "Menú de hamburguesas" },
+    { name: "Ingredients", description: "Stock de ingredientes" },
+    { name: "Orders", description: "Pedidos de clientes" },
+    { name: "Deliveries", description: "Repartidores" },
+    { name: "Delivery Zones", description: "Zonas y costos de envío" },
+    { name: "Cash Register", description: "Cierres de caja y reportes" },
   ],
   components: {
     securitySchemes: {
@@ -41,637 +30,718 @@ const swaggerDocument = {
         type: "apiKey",
         in: "header",
         name: "x-api-key",
-        description:
-          "Clave del API utilizada para autenticar la solicitud. Define el rol (admin o user) y los permisos disponibles.",
+        description: "Clave del API para autenticación (admin o user)",
+      },
+      TenantId: {
+        type: "apiKey",
+        in: "header",
+        name: "x-tenant-id",
+        description: "Identificador de la hamburguesería",
       },
     },
     schemas: {
-      Booking: {
+      Tenant: {
         type: "object",
         properties: {
-          id: { type: "string", example: "booking_123" },
-          name: { type: "string", example: "Juan Pérez" },
-          service: { type: "string", example: "Corte clásico" },
-          date: {
-            type: "string",
-            format: "date",
-            example: "2025-10-15",
-          },
-          time: {
-            type: "string",
-            example: "11:30",
-            description: "Hora en formato HH:mm",
-          },
-          phone: {
-            type: "string",
-            example: "+54 9 11 5555-5555",
-          },
-          createdAt: {
-            type: "string",
-            format: "date-time",
-            example: "2025-10-01T14:20:00.000Z",
-          },
-        },
-        required: [
-          "id",
-          "name",
-          "service",
-          "date",
-          "time",
-          "phone",
-          "createdAt",
-        ],
-      },
-      CreateBookingInput: {
-        type: "object",
-        properties: {
-          name: { type: "string" },
-          service: { type: "string" },
-          date: { type: "string", format: "date" },
-          time: { type: "string", example: "11:30" },
-          phone: { type: "string" },
-        },
-        required: ["name", "service", "date", "time", "phone"],
-        example: {
-          name: "Juan Pérez",
-          service: "Corte clásico",
-          date: "2025-10-25",
-          time: "11:30",
-          phone: "+54 9 11 5555-5555",
+          id: { type: "string", example: "tenant_123" },
+          name: { type: "string", example: "Burger Palace" },
+          address: { type: "string", example: "Av. Corrientes 1234" },
+          phone: { type: "string", example: "+54 11 5555-5555" },
+          logo: { type: "string", example: "https://example.com/logo.png" },
+          whatsappNumber: { type: "string", example: "+5491155555555" },
+          isActive: { type: "boolean", example: true },
+          createdAt: { type: "string", format: "date-time" },
         },
       },
-      Service: {
+      Product: {
         type: "object",
         properties: {
-          id: { type: "string", example: "service_123" },
-          name: { type: "string", example: "Manicura" },
+          id: { type: "string", example: "prod_123" },
+          tenantId: { type: "string", example: "tenant_123" },
+          name: { type: "string", example: "Hamburguesa Clásica" },
           description: {
             type: "string",
-            example: "Servicio completo de manicura",
+            example: "Carne, lechuga, tomate, queso",
           },
-          durationMinutes: { type: "integer", example: 60 },
-          price: { type: "number", example: 1500 },
-          createdAt: {
+          price: { type: "number", example: 2500 },
+          image: { type: "string", example: "https://example.com/burger.jpg" },
+          category: {
             type: "string",
-            format: "date-time",
-            example: "2025-10-01T14:20:00.000Z",
+            enum: [
+              "simple",
+              "doble",
+              "triple",
+              "especial",
+              "vegetariana",
+              "combo",
+            ],
+            example: "simple",
           },
-        },
-        required: ["id", "name", "createdAt"],
-      },
-      CreateServiceInput: {
-        type: "object",
-        properties: {
-          name: { type: "string" },
-          description: { type: "string" },
-          durationMinutes: { type: "integer" },
-          price: { type: "number" },
-        },
-        required: ["name"],
-        example: {
-          name: "Limpieza facial",
-          description: "Tratamiento de limpieza profunda con hidratación",
-          durationMinutes: 45,
-          price: 1800,
+          ingredients: {
+            type: "array",
+            items: { $ref: "#/components/schemas/ProductIngredient" },
+          },
+          available: { type: "boolean", example: true },
+          createdAt: { type: "string", format: "date-time" },
         },
       },
-      UpdateServiceInput: {
+      ProductIngredient: {
         type: "object",
         properties: {
-          name: { type: "string" },
-          description: { type: "string" },
-          durationMinutes: { type: "integer", minimum: 1 },
-          price: { type: "number", minimum: 0 },
-        },
-        description:
-          "Campos opcionales para editar un servicio existente. Se puede enviar uno o varios.",
-        example: {
-          name: "Corte premium",
-          durationMinutes: 60,
-          price: 2200,
+          ingredientId: { type: "string" },
+          ingredientName: { type: "string", example: "Queso cheddar" },
+          quantity: { type: "number", example: 50 },
+          unit: { type: "string", example: "gramos" },
+          isRemovable: { type: "boolean", example: true },
+          isExtra: { type: "boolean", example: true },
+          extraPrice: { type: "number", example: 300 },
         },
       },
-      UpdateBookingInput: {
+      Ingredient: {
         type: "object",
         properties: {
-          name: { type: "string" },
-          service: { type: "string" },
-          date: { type: "string", format: "date" },
-          time: { type: "string", example: "11:30" },
-          phone: { type: "string" },
-        },
-        description:
-          "Campos opcionales para editar un turno existente. Se puede enviar uno o varios.",
-        example: {
-          name: "Juan Pérez",
-          date: "2025-10-26",
-          time: "14:00",
+          id: { type: "string", example: "ing_123" },
+          tenantId: { type: "string" },
+          name: { type: "string", example: "Pan de hamburguesa" },
+          unit: {
+            type: "string",
+            enum: ["gramos", "unidades", "ml", "kg", "litros"],
+            example: "unidades",
+          },
+          stock: { type: "number", example: 100 },
+          minStock: { type: "number", example: 20 },
+          costPerUnit: { type: "number", example: 50 },
+          createdAt: { type: "string", format: "date-time" },
         },
       },
-      ErrorResponse: {
+      Order: {
         type: "object",
         properties: {
-          error: { type: "string", example: "Ruta no encontrada" },
+          id: { type: "string", example: "order_123" },
+          tenantId: { type: "string" },
+          customerName: { type: "string", example: "Juan Pérez" },
+          customerPhone: { type: "string", example: "+54 11 5555-5555" },
+          items: {
+            type: "array",
+            items: { $ref: "#/components/schemas/OrderItem" },
+          },
+          status: {
+            type: "string",
+            enum: [
+              "pendiente",
+              "confirmado",
+              "en_preparacion",
+              "listo",
+              "en_camino",
+              "entregado",
+              "cancelado",
+            ],
+            example: "pendiente",
+          },
+          orderType: {
+            type: "string",
+            enum: ["delivery", "pickup"],
+            example: "delivery",
+          },
+          deliveryAddress: {
+            type: "string",
+            example: "Av. Corrientes 1234, CABA",
+          },
+          deliveryId: { type: "string" },
+          deliveryCost: { type: "number", example: 500 },
+          paymentMethod: {
+            type: "string",
+            enum: ["efectivo", "transferencia"],
+            example: "efectivo",
+          },
+          subtotal: { type: "number", example: 5000 },
+          total: { type: "number", example: 5500 },
+          notes: { type: "string" },
+          createdAt: { type: "string", format: "date-time" },
+          updatedAt: { type: "string", format: "date-time" },
+        },
+      },
+      OrderItem: {
+        type: "object",
+        properties: {
+          productId: { type: "string" },
+          productName: { type: "string", example: "Hamburguesa Clásica" },
+          quantity: { type: "number", example: 2 },
+          unitPrice: { type: "number", example: 2500 },
+          customizations: {
+            type: "array",
+            items: { $ref: "#/components/schemas/OrderCustomization" },
+          },
+          itemTotal: { type: "number", example: 5000 },
+          notes: { type: "string" },
+        },
+      },
+      OrderCustomization: {
+        type: "object",
+        properties: {
+          ingredientId: { type: "string" },
+          ingredientName: { type: "string", example: "Cebolla" },
+          type: {
+            type: "string",
+            enum: ["agregar", "quitar"],
+            example: "quitar",
+          },
+          extraPrice: { type: "number", example: 0 },
+        },
+      },
+      Delivery: {
+        type: "object",
+        properties: {
+          id: { type: "string", example: "del_123" },
+          tenantId: { type: "string" },
+          name: { type: "string", example: "Carlos García" },
+          phone: { type: "string", example: "+54 11 5555-5555" },
+          isActive: { type: "boolean", example: true },
+          createdAt: { type: "string", format: "date-time" },
+        },
+      },
+      DeliveryZone: {
+        type: "object",
+        properties: {
+          id: { type: "string", example: "zone_123" },
+          tenantId: { type: "string" },
+          name: { type: "string", example: "Zona Centro" },
+          minDistance: { type: "number", example: 0 },
+          maxDistance: { type: "number", example: 3 },
+          cost: { type: "number", example: 300 },
+          isActive: { type: "boolean", example: true },
+          createdAt: { type: "string", format: "date-time" },
+        },
+      },
+      CashRegister: {
+        type: "object",
+        properties: {
+          id: { type: "string", example: "cash_123" },
+          tenantId: { type: "string" },
+          date: { type: "string", format: "date", example: "2026-02-03" },
+          summary: { $ref: "#/components/schemas/CashRegisterSummary" },
+          closedBy: { type: "string", example: "admin" },
+          notes: { type: "string" },
+          closedAt: { type: "string", format: "date-time" },
+          createdAt: { type: "string", format: "date-time" },
+        },
+      },
+      CashRegisterSummary: {
+        type: "object",
+        properties: {
+          cashTotal: { type: "number", example: 15000 },
+          transferTotal: { type: "number", example: 25000 },
+          deliveryCostTotal: { type: "number", example: 3000 },
+          subtotal: { type: "number", example: 37000 },
+          grandTotal: { type: "number", example: 40000 },
+          orderCount: { type: "number", example: 15 },
+          cancelledCount: { type: "number", example: 2 },
+        },
+      },
+      SalesReport: {
+        type: "object",
+        properties: {
+          period: { type: "string", enum: ["daily", "weekly", "monthly"] },
+          startDate: { type: "string", format: "date" },
+          endDate: { type: "string", format: "date" },
+          totalSales: { type: "number" },
+          totalOrders: { type: "number" },
+          totalCash: { type: "number" },
+          totalTransfer: { type: "number" },
+          totalDeliveryCost: { type: "number" },
+          averageOrderValue: { type: "number" },
+        },
+      },
+      Error: {
+        type: "object",
+        properties: {
+          error: { type: "string" },
+          message: { type: "string" },
         },
       },
     },
   },
-  security: [{ ApiKeyAuth: [] }],
+  security: [{ ApiKeyAuth: [] }, { TenantId: [] }],
   paths: {
-    "/bookings": {
+    "/tenants": {
       get: {
-        tags: ["Bookings"],
-        summary: "Lista todos los turnos registrados",
-        description: "Disponible para roles admin y user.",
-        security: [{ ApiKeyAuth: [] }],
+        tags: ["Tenants"],
+        summary: "Listar hamburgueserías",
         responses: {
           200: {
-            description: "Listado de turnos",
+            description: "Lista de tenants",
             content: {
               "application/json": {
                 schema: {
                   type: "array",
-                  items: { $ref: "#/components/schemas/Booking" },
+                  items: { $ref: "#/components/schemas/Tenant" },
                 },
-              },
-            },
-          },
-          401: {
-            description: "Autenticación requerida o clave inválida",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/ErrorResponse" },
-              },
-            },
-          },
-          500: {
-            description: "Error inesperado",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/ErrorResponse" },
               },
             },
           },
         },
       },
       post: {
-        tags: ["Bookings"],
-        summary: "Crea un nuevo turno",
-        description: "Requiere rol admin.",
-        security: [{ ApiKeyAuth: [] }],
+        tags: ["Tenants"],
+        summary: "Crear hamburguesería",
         requestBody: {
           required: true,
           content: {
             "application/json": {
-              schema: { $ref: "#/components/schemas/CreateBookingInput" },
+              schema: {
+                type: "object",
+                required: ["name"],
+                properties: {
+                  name: { type: "string" },
+                  address: { type: "string" },
+                  phone: { type: "string" },
+                  logo: { type: "string" },
+                  whatsappNumber: { type: "string" },
+                },
+              },
             },
           },
         },
+        responses: { 201: { description: "Tenant creado" } },
+      },
+    },
+    "/products": {
+      get: {
+        tags: ["Products"],
+        summary: "Listar productos del menú",
+        parameters: [
+          { name: "available", in: "query", schema: { type: "boolean" } },
+          { name: "category", in: "query", schema: { type: "string" } },
+        ],
         responses: {
-          201: {
-            description: "Turno creado",
+          200: {
+            description: "Lista de productos",
             content: {
               "application/json": {
-                schema: { $ref: "#/components/schemas/Booking" },
-              },
-            },
-          },
-          400: {
-            description: "Datos inválidos",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/ErrorResponse" },
-              },
-            },
-          },
-          401: {
-            description: "Autenticación requerida o clave inválida",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/ErrorResponse" },
-              },
-            },
-          },
-          403: {
-            description: "Permisos insuficientes (se requiere rol admin)",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/ErrorResponse" },
-              },
-            },
-          },
-          500: {
-            description: "Error inesperado",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/ErrorResponse" },
+                schema: {
+                  type: "array",
+                  items: { $ref: "#/components/schemas/Product" },
+                },
               },
             },
           },
         },
       },
+      post: {
+        tags: ["Products"],
+        summary: "Crear producto",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["name", "price", "category"],
+                properties: {
+                  name: { type: "string" },
+                  description: { type: "string" },
+                  price: { type: "number" },
+                  image: { type: "string" },
+                  category: { type: "string" },
+                  ingredients: { type: "array" },
+                  available: { type: "boolean" },
+                },
+              },
+            },
+          },
+        },
+        responses: { 201: { description: "Producto creado" } },
+      },
     },
-    "/bookings/{id}": {
+    "/ingredients": {
+      get: {
+        tags: ["Ingredients"],
+        summary: "Listar ingredientes",
+        responses: {
+          200: {
+            description: "Lista de ingredientes",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: { $ref: "#/components/schemas/Ingredient" },
+                },
+              },
+            },
+          },
+        },
+      },
+      post: {
+        tags: ["Ingredients"],
+        summary: "Crear ingrediente",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["name", "unit", "stock", "minStock", "costPerUnit"],
+                properties: {
+                  name: { type: "string" },
+                  unit: { type: "string" },
+                  stock: { type: "number" },
+                  minStock: { type: "number" },
+                  costPerUnit: { type: "number" },
+                },
+              },
+            },
+          },
+        },
+        responses: { 201: { description: "Ingrediente creado" } },
+      },
+    },
+    "/ingredients/low-stock": {
+      get: {
+        tags: ["Ingredients"],
+        summary: "Obtener ingredientes con stock bajo",
+        responses: {
+          200: { description: "Lista de ingredientes con stock bajo" },
+        },
+      },
+    },
+    "/ingredients/{id}/stock": {
       patch: {
-        tags: ["Bookings"],
-        summary: "Actualiza un turno existente",
-        description: "Requiere rol admin.",
-        security: [{ ApiKeyAuth: [] }],
+        tags: ["Ingredients"],
+        summary: "Actualizar stock",
         parameters: [
           {
             name: "id",
             in: "path",
             required: true,
             schema: { type: "string" },
-            description: "Identificador del turno a actualizar",
           },
         ],
         requestBody: {
           required: true,
           content: {
             "application/json": {
-              schema: { $ref: "#/components/schemas/UpdateBookingInput" },
-            },
-          },
-        },
-        responses: {
-          200: {
-            description: "Turno actualizado",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/Booking" },
-              },
-            },
-          },
-          400: {
-            description: "Solicitud inválida",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/ErrorResponse" },
-              },
-            },
-          },
-          401: {
-            description: "Autenticación requerida o clave inválida",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/ErrorResponse" },
-              },
-            },
-          },
-          403: {
-            description: "Permisos insuficientes (se requiere rol admin)",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/ErrorResponse" },
-              },
-            },
-          },
-          404: {
-            description: "Turno no encontrado",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/ErrorResponse" },
-              },
-            },
-          },
-          409: {
-            description: "El horario ya no está disponible",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/ErrorResponse" },
-              },
-            },
-          },
-          500: {
-            description: "Error inesperado",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/ErrorResponse" },
-              },
-            },
-          },
-        },
-      },
-      delete: {
-        tags: ["Bookings"],
-        summary: "Elimina un turno existente",
-        description: "Requiere rol admin.",
-        security: [{ ApiKeyAuth: [] }],
-        parameters: [
-          {
-            name: "id",
-            in: "path",
-            required: true,
-            schema: { type: "string" },
-            description: "Identificador del turno",
-          },
-        ],
-        responses: {
-          204: {
-            description: "Turno eliminado",
-          },
-          400: {
-            description: "Solicitud inválida",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/ErrorResponse" },
-              },
-            },
-          },
-          404: {
-            description: "Turno no encontrado",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/ErrorResponse" },
-              },
-            },
-          },
-          401: {
-            description: "Autenticación requerida o clave inválida",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/ErrorResponse" },
-              },
-            },
-          },
-          403: {
-            description: "Permisos insuficientes (se requiere rol admin)",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/ErrorResponse" },
-              },
-            },
-          },
-          500: {
-            description: "Error inesperado",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/ErrorResponse" },
-              },
-            },
-          },
-        },
-      },
-    },
-    "/services": {
-      get: {
-        tags: ["Services"],
-        summary: "Lista los servicios configurados",
-        description: "Disponible para roles admin y user.",
-        security: [{ ApiKeyAuth: [] }],
-        responses: {
-          200: {
-            description: "Listado de servicios",
-            content: {
-              "application/json": {
-                schema: {
-                  type: "array",
-                  items: { $ref: "#/components/schemas/Service" },
+              schema: {
+                type: "object",
+                required: ["quantity", "type", "reason"],
+                properties: {
+                  quantity: { type: "number" },
+                  type: {
+                    type: "string",
+                    enum: ["entrada", "salida", "ajuste"],
+                  },
+                  reason: { type: "string" },
                 },
               },
             },
           },
-          401: {
-            description: "Autenticación requerida o clave inválida",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/ErrorResponse" },
-              },
-            },
+        },
+        responses: { 200: { description: "Stock actualizado" } },
+      },
+    },
+    "/orders": {
+      get: {
+        tags: ["Orders"],
+        summary: "Listar pedidos",
+        parameters: [
+          { name: "status", in: "query", schema: { type: "string" } },
+          {
+            name: "date",
+            in: "query",
+            schema: { type: "string", format: "date" },
           },
-          500: {
-            description: "Error inesperado",
+          { name: "pending", in: "query", schema: { type: "boolean" } },
+        ],
+        responses: {
+          200: {
+            description: "Lista de pedidos",
             content: {
               "application/json": {
-                schema: { $ref: "#/components/schemas/ErrorResponse" },
+                schema: {
+                  type: "array",
+                  items: { $ref: "#/components/schemas/Order" },
+                },
               },
             },
           },
         },
       },
       post: {
-        tags: ["Services"],
-        summary: "Crea un nuevo servicio",
-        description: "Requiere rol admin.",
-        security: [{ ApiKeyAuth: [] }],
+        tags: ["Orders"],
+        summary: "Crear pedido",
         requestBody: {
           required: true,
           content: {
             "application/json": {
-              schema: { $ref: "#/components/schemas/CreateServiceInput" },
-            },
-          },
-        },
-        responses: {
-          201: {
-            description: "Servicio creado",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/Service" },
-              },
-            },
-          },
-          400: {
-            description: "Datos inválidos",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/ErrorResponse" },
-              },
-            },
-          },
-          401: {
-            description: "Autenticación requerida o clave inválida",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/ErrorResponse" },
-              },
-            },
-          },
-          403: {
-            description: "Permisos insuficientes (se requiere rol admin)",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/ErrorResponse" },
-              },
-            },
-          },
-          500: {
-            description: "Error inesperado",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/ErrorResponse" },
+              schema: {
+                type: "object",
+                required: [
+                  "customerName",
+                  "customerPhone",
+                  "items",
+                  "orderType",
+                  "paymentMethod",
+                ],
+                properties: {
+                  customerName: { type: "string" },
+                  customerPhone: { type: "string" },
+                  items: { type: "array" },
+                  orderType: { type: "string", enum: ["delivery", "pickup"] },
+                  deliveryAddress: { type: "string" },
+                  paymentMethod: {
+                    type: "string",
+                    enum: ["efectivo", "transferencia"],
+                  },
+                  notes: { type: "string" },
+                },
               },
             },
           },
         },
+        responses: { 201: { description: "Pedido creado" } },
       },
     },
-    "/services/{id}": {
-      put: {
-        tags: ["Services"],
-        summary: "Actualiza un servicio existente",
-        description: "Requiere rol admin.",
-        security: [{ ApiKeyAuth: [] }],
+    "/orders/{id}/confirm": {
+      post: {
+        tags: ["Orders"],
+        summary: "Confirmar pedido (descuenta stock)",
         parameters: [
           {
             name: "id",
             in: "path",
             required: true,
             schema: { type: "string" },
-            description: "Identificador del servicio a actualizar",
           },
         ],
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: { $ref: "#/components/schemas/UpdateServiceInput" },
-            },
-          },
-        },
-        responses: {
-          200: {
-            description: "Servicio actualizado",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/Service" },
-              },
-            },
-          },
-          400: {
-            description: "Solicitud inválida",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/ErrorResponse" },
-              },
-            },
-          },
-          401: {
-            description: "Autenticación requerida o clave inválida",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/ErrorResponse" },
-              },
-            },
-          },
-          403: {
-            description: "Permisos insuficientes (se requiere rol admin)",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/ErrorResponse" },
-              },
-            },
-          },
-          404: {
-            description: "Servicio no encontrado",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/ErrorResponse" },
-              },
-            },
-          },
-          500: {
-            description: "Error inesperado",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/ErrorResponse" },
-              },
-            },
-          },
-        },
+        responses: { 200: { description: "Pedido confirmado" } },
       },
-      delete: {
-        tags: ["Services"],
-        summary: "Elimina un servicio",
-        description: "Requiere rol admin.",
-        security: [{ ApiKeyAuth: [] }],
+    },
+    "/orders/{id}/cancel": {
+      post: {
+        tags: ["Orders"],
+        summary: "Cancelar pedido",
         parameters: [
           {
             name: "id",
             in: "path",
             required: true,
             schema: { type: "string" },
-            description: "Identificador del servicio a eliminar",
           },
         ],
-        responses: {
-          204: {
-            description: "Servicio eliminado",
-          },
-          400: {
-            description: "Solicitud inválida",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/ErrorResponse" },
-              },
-            },
-          },
-          401: {
-            description: "Autenticación requerida o clave inválida",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/ErrorResponse" },
-              },
-            },
-          },
-          403: {
-            description: "Permisos insuficientes (se requiere rol admin)",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/ErrorResponse" },
-              },
-            },
-          },
-          404: {
-            description: "Servicio no encontrado",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/ErrorResponse" },
-              },
-            },
-          },
-          500: {
-            description: "Error inesperado",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/ErrorResponse" },
-              },
-            },
-          },
-        },
+        responses: { 200: { description: "Pedido cancelado" } },
       },
     },
-    "/health": {
-      get: {
-        tags: ["Health"],
-        summary: "Verifica el estado del servicio",
-        servers: [
+    "/orders/{id}/status": {
+      patch: {
+        tags: ["Orders"],
+        summary: "Actualizar estado del pedido",
+        parameters: [
           {
-            url: "http://localhost:3000",
-            description: "Endpoint público de health check",
-          },
-          {
-            url: "https://booking-bot-lhrx.onrender.com",
-            description: "Producción",
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
           },
         ],
-        responses: {
-          200: {
-            description: "Servicio operativo",
-            content: {
-              "application/json": {
-                schema: {
-                  type: "object",
-                  properties: {
-                    status: { type: "string", example: "ok" },
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["status"],
+                properties: {
+                  status: {
+                    type: "string",
+                    enum: [
+                      "pendiente",
+                      "confirmado",
+                      "en_preparacion",
+                      "listo",
+                      "en_camino",
+                      "entregado",
+                      "cancelado",
+                    ],
                   },
                 },
               },
             },
           },
         },
-        security: [],
+        responses: { 200: { description: "Estado actualizado" } },
+      },
+    },
+    "/deliveries": {
+      get: {
+        tags: ["Deliveries"],
+        summary: "Listar repartidores",
+        parameters: [
+          { name: "active", in: "query", schema: { type: "boolean" } },
+        ],
+        responses: {
+          200: {
+            description: "Lista de repartidores",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: { $ref: "#/components/schemas/Delivery" },
+                },
+              },
+            },
+          },
+        },
+      },
+      post: {
+        tags: ["Deliveries"],
+        summary: "Crear repartidor",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["name", "phone"],
+                properties: {
+                  name: { type: "string" },
+                  phone: { type: "string" },
+                },
+              },
+            },
+          },
+        },
+        responses: { 201: { description: "Repartidor creado" } },
+      },
+    },
+    "/delivery-zones": {
+      get: {
+        tags: ["Delivery Zones"],
+        summary: "Listar zonas de envío",
+        responses: {
+          200: {
+            description: "Lista de zonas",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: { $ref: "#/components/schemas/DeliveryZone" },
+                },
+              },
+            },
+          },
+        },
+      },
+      post: {
+        tags: ["Delivery Zones"],
+        summary: "Crear zona de envío",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["name", "minDistance", "maxDistance", "cost"],
+                properties: {
+                  name: { type: "string" },
+                  minDistance: { type: "number" },
+                  maxDistance: { type: "number" },
+                  cost: { type: "number" },
+                },
+              },
+            },
+          },
+        },
+        responses: { 201: { description: "Zona creada" } },
+      },
+    },
+    "/delivery-zones/calculate": {
+      get: {
+        tags: ["Delivery Zones"],
+        summary: "Calcular costo de envío",
+        parameters: [
+          {
+            name: "distance",
+            in: "query",
+            required: true,
+            schema: { type: "number" },
+          },
+        ],
+        responses: { 200: { description: "Costo calculado" } },
+      },
+    },
+    "/cash-register": {
+      get: {
+        tags: ["Cash Register"],
+        summary: "Listar cierres de caja",
+        responses: {
+          200: {
+            description: "Lista de cierres",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: { $ref: "#/components/schemas/CashRegister" },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    "/cash-register/summary": {
+      get: {
+        tags: ["Cash Register"],
+        summary: "Obtener resumen del día (sin cerrar)",
+        parameters: [
+          {
+            name: "date",
+            in: "query",
+            schema: { type: "string", format: "date" },
+          },
+        ],
+        responses: { 200: { description: "Resumen del día" } },
+      },
+    },
+    "/cash-register/close": {
+      post: {
+        tags: ["Cash Register"],
+        summary: "Realizar cierre de caja",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["date", "closedBy"],
+                properties: {
+                  date: { type: "string", format: "date" },
+                  closedBy: { type: "string" },
+                  notes: { type: "string" },
+                },
+              },
+            },
+          },
+        },
+        responses: { 201: { description: "Cierre realizado" } },
+      },
+    },
+    "/cash-register/report": {
+      get: {
+        tags: ["Cash Register"],
+        summary: "Generar reporte de ventas",
+        parameters: [
+          {
+            name: "period",
+            in: "query",
+            required: true,
+            schema: { type: "string", enum: ["daily", "weekly", "monthly"] },
+          },
+          {
+            name: "date",
+            in: "query",
+            schema: { type: "string", format: "date" },
+          },
+        ],
+        responses: { 200: { description: "Reporte generado" } },
       },
     },
   },

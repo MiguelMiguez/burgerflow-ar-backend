@@ -28,7 +28,7 @@ app.use(
     swaggerOptions: {
       persistAuthorization: true,
     },
-  })
+  }),
 );
 app.get("/docs.json", (_req: Request, res: Response) => {
   res.json(swaggerDocument);
@@ -40,7 +40,7 @@ app.get("/health", (_req: Request, res: Response) => {
 
 app.get("/", (_req: Request, res: Response) => {
   res.json({
-    message: "Booking Bot API",
+    message: "BurgerFlow API - Sistema de Pedidos de Hamburguesas",
     docs: "/docs",
     health: "/health",
   });
