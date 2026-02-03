@@ -14,6 +14,7 @@ import {
 import { bulkUpdateStock } from "./ingredientService";
 import { getProductById } from "./productService";
 import { HttpError } from "../utils/httpError";
+import { listTenants } from "./tenantService";
 
 const ORDERS_COLLECTION = "orders";
 
@@ -41,6 +42,38 @@ const calculateOrderTotals = (
   const subtotal = items.reduce((sum, item) => sum + item.itemTotal, 0);
   const total = subtotal + deliveryCost;
   return { subtotal, total };
+};
+
+// Listar todos los orders de todos los tenants (para admin)
+export const listAllOrders = async (): Promise<Order[]> => {
+  const tenants = await listTenants();
+  const allOrders: Order[] = [];
+
+  for (const tenant of tenants) {
+    const orders = await listOrders(tenant.id);
+    allOrders.push(...orders);
+  }
+
+  // Ordenar por fecha de creación descendente
+  return allOrders.sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  );
+};
+
+// Listar todos los pedidos pendientes de todos los tenants (para admin)
+export const listAllPendingOrders = async (): Promise<Order[]> => {
+  const tenants = await listTenants();
+  const allOrders: Order[] = [];
+
+  for (const tenant of tenants) {
+    const orders = await listPendingOrders(tenant.id);
+    allOrders.push(...orders);
+  }
+
+  // Ordenar por fecha de creación ascendente (más antiguos primero)
+  return allOrders.sort(
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+  );
 };
 
 export const listOrders = async (tenantId: string): Promise<Order[]> => {

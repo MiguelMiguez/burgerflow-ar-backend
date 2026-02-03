@@ -6,11 +6,19 @@ import orderRoutes from "./orderRoutes";
 import deliveryRoutes from "./deliveryRoutes";
 import deliveryZoneRoutes from "./deliveryZoneRoutes";
 import cashRegisterRoutes from "./cashRegisterRoutes";
+import serviceRoutes from "./serviceRoutes";
+import bookingRoutes from "./bookingRoutes";
 
 const router = Router();
 
 // Rutas de administración de tenants (hamburgueserías)
 router.use("/tenants", tenantRoutes);
+
+// Rutas de servicios (para autenticación)
+router.use("/services", serviceRoutes);
+
+// Rutas de reservas/turnos
+router.use("/bookings", bookingRoutes);
 
 // Rutas del menú (productos/hamburguesas)
 router.use("/products", productRoutes);

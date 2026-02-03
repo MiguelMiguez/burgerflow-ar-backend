@@ -5,9 +5,11 @@ import {
   createOrder,
   getOrderById,
   listOrders,
+  listAllOrders,
   listOrdersByDate,
   listOrdersByStatus,
   listPendingOrders,
+  listAllPendingOrders,
   updateOrder,
 } from "../services/orderService";
 import {
@@ -18,9 +20,17 @@ import {
 import { HttpError } from "../utils/httpError";
 import { logger } from "../utils/logger";
 
-const getTenantId = (req: Request): string => {
+const getTenantId = (req: Request): string | null => {
   const tenantId = req.params.tenantId || req.headers["x-tenant-id"];
   if (!tenantId || typeof tenantId !== "string") {
+    return null;
+  }
+  return tenantId;
+};
+
+const requireTenantId = (req: Request): string => {
+  const tenantId = getTenantId(req);
+  if (!tenantId) {
     throw new HttpError(400, "Se requiere el identificador del tenant.");
   }
   return tenantId;
@@ -34,17 +44,29 @@ export const handleListOrders = async (
   try {
     const tenantId = getTenantId(req);
     const { status, date, pending } = req.query;
+    const isAdmin = req.userRole === "admin";
 
     let orders;
 
-    if (pending === "true") {
-      orders = await listPendingOrders(tenantId);
-    } else if (status && typeof status === "string") {
-      orders = await listOrdersByStatus(tenantId, status as OrderStatus);
-    } else if (date && typeof date === "string") {
-      orders = await listOrdersByDate(tenantId, date);
+    // Si no hay tenant y es admin, listar de todos los tenants
+    if (!tenantId && isAdmin) {
+      if (pending === "true") {
+        orders = await listAllPendingOrders();
+      } else {
+        orders = await listAllOrders();
+      }
+    } else if (tenantId) {
+      if (pending === "true") {
+        orders = await listPendingOrders(tenantId);
+      } else if (status && typeof status === "string") {
+        orders = await listOrdersByStatus(tenantId, status as OrderStatus);
+      } else if (date && typeof date === "string") {
+        orders = await listOrdersByDate(tenantId, date);
+      } else {
+        orders = await listOrders(tenantId);
+      }
     } else {
-      orders = await listOrders(tenantId);
+      throw new HttpError(400, "Se requiere el identificador del tenant.");
     }
 
     res.json(orders);
@@ -59,7 +81,7 @@ export const handleGetOrder = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = requireTenantId(req);
     const { id } = req.params;
 
     if (!id) {
@@ -79,7 +101,7 @@ export const handleCreateOrder = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = requireTenantId(req);
     const payload: CreateOrderInput = {
       ...req.body,
       tenantId,
@@ -122,7 +144,7 @@ export const handleUpdateOrder = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = requireTenantId(req);
     const { id } = req.params;
 
     if (!id) {
@@ -152,7 +174,7 @@ export const handleConfirmOrder = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = requireTenantId(req);
     const { id } = req.params;
 
     if (!id) {
@@ -173,7 +195,7 @@ export const handleCancelOrder = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = requireTenantId(req);
     const { id } = req.params;
 
     if (!id) {
@@ -194,7 +216,7 @@ export const handleUpdateOrderStatus = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = requireTenantId(req);
     const { id } = req.params;
     const { status } = req.body;
 
