@@ -151,7 +151,9 @@ export const handleUpdateStock = async (
     const tenantId = getTenantId(req);
     const { id } = req.params;
 
-    logger.info(`Actualizando stock - Tenant: ${tenantId}, ID: ${id}, Body: ${JSON.stringify(req.body)}`);
+    logger.info(
+      `Actualizando stock - Tenant: ${tenantId}, ID: ${id}, Body: ${JSON.stringify(req.body)}`,
+    );
 
     if (!id) {
       throw new HttpError(400, "Se requiere el id del ingrediente.");

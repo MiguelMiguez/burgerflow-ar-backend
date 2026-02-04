@@ -4,7 +4,9 @@ import { logger } from "../utils/logger";
 import type { Order, OrderStatus } from "../models/order";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type WhatsappClient = Client & { sendMessage: (chatId: string, message: string) => Promise<any> };
+type WhatsappClient = Client & {
+  sendMessage: (chatId: string, message: string) => Promise<any>;
+};
 
 const STATUS_MESSAGES: Record<OrderStatus, (order: Order) => string> = {
   pendiente: (order) =>
@@ -113,17 +115,18 @@ export const sendOrderStatusNotification = async (
   const orderWithNewStatus = { ...order, status: newStatus };
   const message = messageGenerator(orderWithNewStatus);
 
-  const chatId = getChatId(order.customerPhone);
+  // Usar whatsappChatId si está disponible, sino intentar con customerPhone
+  const chatId = order.whatsappChatId || getChatId(order.customerPhone);
 
   try {
     await client.sendMessage(chatId, message);
     logger.info(
-      `Notificación enviada a ${order.customerPhone} - Pedido #${order.id.slice(-6)} -> ${newStatus}`,
+      `Notificación enviada a ${order.customerPhone} (chatId: ${chatId}) - Pedido #${order.id.slice(-6)} -> ${newStatus}`,
     );
     return true;
   } catch (error) {
     logger.error(
-      `Error al enviar notificación a ${order.customerPhone}`,
+      `Error al enviar notificación a ${order.customerPhone} (chatId: ${chatId})`,
       error,
     );
     return false;
@@ -140,7 +143,9 @@ export const sendWhatsappMessage = async (
   const client = getWhatsappClient() as WhatsappClient | null;
 
   if (!client) {
-    logger.warn(`No se pudo enviar mensaje - Cliente de WhatsApp no disponible`);
+    logger.warn(
+      `No se pudo enviar mensaje - Cliente de WhatsApp no disponible`,
+    );
     return false;
   }
 

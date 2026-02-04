@@ -539,9 +539,40 @@ const handleOrderConfirmation = async (
   }
 
   try {
-    // Guardar el chatId completo para poder enviar mensajes de vuelta
-    // message.from puede ser LID (xxx@lid) o número (xxx@c.us)
-    const customerPhone = message.from;
+    // Obtener el número de teléfono real del contacto
+    // message.from contiene el chatId (puede ser LID o número@c.us)
+    // Necesitamos obtener el número real del contacto
+    let customerPhone = message.from; // Guardar chatId para notificaciones
+    let displayPhone = ""; // Número para mostrar al usuario
+
+    try {
+      const contact = await message.getContact();
+      // El número real está en contact.number
+      if (contact.number) {
+        displayPhone = contact.number.startsWith("+")
+          ? contact.number
+          : `+${contact.number}`;
+      } else {
+        // Intentar obtener desde el id del contacto (puede no estar tipado)
+        const contactId = (contact as unknown as { id?: { user?: string } }).id;
+        if (contactId?.user) {
+          displayPhone = `+${contactId.user}`;
+        }
+      }
+    } catch (err) {
+      logger.debug("No se pudo obtener el número del contacto de WhatsApp");
+    }
+
+    // Si no pudimos obtener el número real, intentar extraerlo del chatId
+    if (!displayPhone) {
+      // Si es formato @c.us, extraer el número
+      if (message.from.includes("@c.us")) {
+        displayPhone = `+${message.from.replace("@c.us", "")}`;
+      } else {
+        // Para LID no podemos obtener el número real, usar el chatId
+        displayPhone = message.from;
+      }
+    }
 
     // Construir items del pedido
     const items: OrderItem[] = state.cart.map((cartItem) => {
@@ -574,7 +605,8 @@ const handleOrderConfirmation = async (
     const orderInput: CreateOrderInput = {
       tenantId: state.tenantId,
       customerName: state.customerName || CUSTOMER_FALLBACK_NAME,
-      customerPhone,
+      customerPhone: displayPhone,
+      whatsappChatId: customerPhone, // Guardar chatId para notificaciones
       items,
       orderType: state.orderType || "pickup",
       deliveryCost: state.orderType === "delivery" ? deliveryCost : 0,

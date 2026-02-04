@@ -32,6 +32,7 @@ export interface CreateOrderInput {
   tenantId: string;
   customerName: string;
   customerPhone: string;
+  whatsappChatId?: string; // ID de chat de WhatsApp para notificaciones
   items: OrderItem[];
   orderType: OrderType;
   deliveryAddress?: string;

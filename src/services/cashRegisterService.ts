@@ -90,11 +90,14 @@ export const closeCashRegister = async (
   const pendingOrders = await getPendingOrdersByDate(tenantId, date);
   if (pendingOrders.length > 0) {
     const pendingCount = pendingOrders.length;
-    const orderIds = pendingOrders.slice(0, 5).map(o => `#${o.id.slice(-6).toUpperCase()}`).join(", ");
+    const orderIds = pendingOrders
+      .slice(0, 5)
+      .map((o) => `#${o.id.slice(-6).toUpperCase()}`)
+      .join(", ");
     const moreText = pendingCount > 5 ? ` y ${pendingCount - 5} más` : "";
     throw new HttpError(
       400,
-      `No se puede cerrar la caja. Hay ${pendingCount} pedido(s) sin entregar o cancelar: ${orderIds}${moreText}.`
+      `No se puede cerrar la caja. Hay ${pendingCount} pedido(s) sin entregar o cancelar: ${orderIds}${moreText}.`,
     );
   }
 
