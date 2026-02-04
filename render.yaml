@@ -1,9 +1,13 @@
 services:
   - type: web
-    name: booking-bot-backend
-    env: node
+    name: burgerflow-backend
+    runtime: node
     plan: free
-    rootDir: backend
     buildCommand: npm install && npm run build
     startCommand: npm run start
     autoDeploy: true
+    envVars:
+      - key: WHATSAPP_ENABLED
+        value: "false"
+      - key: NODE_ENV
+        value: production
