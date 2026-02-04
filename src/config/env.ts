@@ -8,10 +8,11 @@ interface EnvConfig {
   firebaseProjectId: string;
   firebaseClientEmail: string;
   firebasePrivateKey: string;
-  whatsappEnabled: boolean;
-  whatsappSessionPath?: string;
-  whatsappBrowserPath?: string;
-  whatsappHeadless: boolean;
+  // Meta WhatsApp Business API
+  metaVerifyToken: string;
+  metaAppSecret: string;
+  metaApiVersion: string;
+  // API Keys
   adminApiKey: string;
   userApiKey: string;
 }
@@ -21,10 +22,11 @@ const rawEnv = {
   FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID,
   FIREBASE_CLIENT_EMAIL: process.env.FIREBASE_CLIENT_EMAIL,
   FIREBASE_PRIVATE_KEY: process.env.FIREBASE_PRIVATE_KEY,
-  WHATSAPP_ENABLED: process.env.WHATSAPP_ENABLED,
-  WHATSAPP_SESSION_PATH: process.env.WHATSAPP_SESSION_PATH,
-  WHATSAPP_BROWSER_PATH: process.env.WHATSAPP_BROWSER_PATH,
-  WHATSAPP_HEADLESS: process.env.WHATSAPP_HEADLESS,
+  // Meta WhatsApp Business API
+  META_VERIFY_TOKEN: process.env.META_VERIFY_TOKEN,
+  META_APP_SECRET: process.env.META_APP_SECRET,
+  META_API_VERSION: process.env.META_API_VERSION ?? "v21.0",
+  // API Keys
   ADMIN_API_KEY: process.env.ADMIN_API_KEY,
   USER_API_KEY: process.env.USER_API_KEY,
 };
@@ -48,10 +50,11 @@ const env: EnvConfig = {
   firebaseProjectId: rawEnv.FIREBASE_PROJECT_ID ?? "",
   firebaseClientEmail: rawEnv.FIREBASE_CLIENT_EMAIL ?? "",
   firebasePrivateKey: sanitizeMultilineSecret(rawEnv.FIREBASE_PRIVATE_KEY),
-  whatsappEnabled: rawEnv.WHATSAPP_ENABLED === "true",
-  whatsappSessionPath: rawEnv.WHATSAPP_SESSION_PATH,
-  whatsappBrowserPath: rawEnv.WHATSAPP_BROWSER_PATH,
-  whatsappHeadless: rawEnv.WHATSAPP_HEADLESS !== "false",
+  // Meta WhatsApp Business API
+  metaVerifyToken: rawEnv.META_VERIFY_TOKEN?.trim() ?? "",
+  metaAppSecret: rawEnv.META_APP_SECRET?.trim() ?? "",
+  metaApiVersion: rawEnv.META_API_VERSION?.trim() ?? "v21.0",
+  // API Keys
   adminApiKey: rawEnv.ADMIN_API_KEY?.trim() ?? "",
   userApiKey: rawEnv.USER_API_KEY?.trim() ?? "",
 };
@@ -77,10 +80,10 @@ const anyCredentialProvided = credentialKeys.some((key) => env[key] !== "");
 
 const runningOnGcp = Boolean(
   process.env.FIREBASE_CONFIG ??
-    process.env.GOOGLE_CLOUD_PROJECT ??
-    process.env.GCLOUD_PROJECT ??
-    process.env.K_SERVICE ??
-    process.env.FUNCTIONS_EMULATOR
+  process.env.GOOGLE_CLOUD_PROJECT ??
+  process.env.GCLOUD_PROJECT ??
+  process.env.K_SERVICE ??
+  process.env.FUNCTIONS_EMULATOR,
 );
 
 if (anyCredentialProvided && missingCredentialKeys.length > 0) {
@@ -89,7 +92,7 @@ if (anyCredentialProvided && missingCredentialKeys.length > 0) {
   });
 } else if (!anyCredentialProvided && !runningOnGcp) {
   logger.warn(
-    "No se detectaron credenciales de Firebase. Configura las variables FIREBASE_* o define GOOGLE_APPLICATION_CREDENTIALS."
+    "No se detectaron credenciales de Firebase. Configura las variables FIREBASE_* o define GOOGLE_APPLICATION_CREDENTIALS.",
   );
 }
 
@@ -98,7 +101,7 @@ if (anyCredentialProvided && missingCredentialKeys.length > 0) {
 ).forEach(([key, envName]) => {
   if (!env[key]) {
     logger.warn(
-      `Variable de entorno faltante para seguridad del API: ${envName}`
+      `Variable de entorno faltante para seguridad del API: ${envName}`,
     );
   }
 });

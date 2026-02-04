@@ -1,57 +1,332 @@
-# Booking Bot Backend
+# BurgerFlow Backend
 
-Backend inicial en TypeScript + Express conectado a Firebase Firestore para gestionar turnos y servicios. Sirve como base para integraciones con bots de mensajería y paneles web de administración.
+Backend de gestión de pedidos de hamburguesas con sistema multi-tenant. Integración con Meta WhatsApp Business Cloud API para tomar pedidos por WhatsApp.
+
+## 🚀 Migración a Meta WhatsApp Cloud API
+
+**⚠️ IMPORTANTE**: Este proyecto fue migrado de `whatsapp-web.js` a la **Meta WhatsApp Business Cloud API oficial**.
+
+📖 **Lee la guía completa de migración**: [META_WHATSAPP_MIGRATION.md](./META_WHATSAPP_MIGRATION.md)
+
+### Cambios Principales
+
+- ❌ Eliminado: `whatsapp-web.js`, `qrcode-terminal`, `puppeteer`
+- ✅ Agregado: `axios`, Meta WhatsApp Business Cloud API (webhook + HTTP API)
+- 🔄 Arquitectura: De emulación de navegador a webhook oficial
+- 🏢 Multi-tenant: Cada negocio con sus propias credenciales de WhatsApp
 
 ## Requisitos previos
 
 - Node.js 18 o superior
-- Cuenta de Firebase con un proyecto configurado y credenciales de servicio
+- Cuenta de Firebase con proyecto configurado y credenciales de servicio
+- **Meta for Developers Account** (para WhatsApp Business API)
+- **Meta Business Manager** (para gestionar números de WhatsApp Business)
 
 ## Configuración
 
-1. Clonar o descargar este repositorio.
-2. Entrar en la carpeta `backend/` y instalar dependencias:
-   ```bash
-   npm install
-   ```
-3. Copiar el archivo `.env.example` a `.env` y completar los valores:
-   ```bash
-   cp .env.example .env
-   ```
-4. En `FIREBASE_PRIVATE_KEY` respeta los saltos de línea. Si la clave viene en una sola línea, reemplaza `\n` por saltos de línea reales o deja la cadena entre comillas con los `\n` escapados.
+### 1. Dependencias
+
+```bash
+npm install
+```
+
+### 2. Variables de Entorno
+
+Copia `.env.example` a `.env` y completa:
+
+```bash
+# Firebase
+FIREBASE_PROJECT_ID=tu-proyecto-firebase
+FIREBASE_CLIENT_EMAIL=tu-service-account@...
+FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n..."
+
+# API Keys
+ADMIN_API_KEY=tu_admin_key_seguro
+USER_API_KEY=tu_user_key_seguro
+
+# Meta WhatsApp Business API
+META_VERIFY_TOKEN=tu_token_secreto_para_verificar_webhook
+META_APP_SECRET=tu_app_secret_de_meta
+META_API_VERSION=v21.0
+```
+
+### 3. Configurar Meta WhatsApp
+
+1. **Crear App en Meta for Developers**:
+   - Ve a https://developers.facebook.com/
+   - Crea una app tipo "Business"
+   - Agrega el producto "WhatsApp"
+
+2. **Configurar Webhook**:
+   - URL: `https://tu-dominio.com/api/webhook`
+   - Verify Token: El mismo valor de `META_VERIFY_TOKEN`
+   - Suscríbete a: `messages`
+
+3. **Obtener Credenciales por Tenant**:
+   - **Phone Number ID**: En WhatsApp > API Setup
+   - **Access Token**: System User Token (recomendado)
+
+4. **Agregar Credenciales al Tenant**:
+
+```bash
+# Edita src/scripts/addMetaCredentials.ts con tus valores
+npm run script:add-meta-credentials
+```
+
+O manualmente en Firestore:
+
+```javascript
+{
+  id: "tenant-id",
+  name: "Mi Hamburguesería",
+  isActive: true,
+  metaPhoneNumberId: "123456789012345",
+  metaAccessToken: "EAAxxxxx..."
+}
+```
 
 ## Scripts disponibles
 
-- `npm run dev`: levanta el servidor con `ts-node`.
-- `npm run typecheck`: ejecuta `tsc --noEmit` para validar tipos.
+- `npm run dev`: Servidor desarrollo con `ts-node`
+- `npm run typecheck`: Validar tipos TypeScript
+- `npm run build`: Compilar a JavaScript
+- `npm start`: Ejecutar servidor compilado
+- `npm run script:add-meta-credentials`: Agregar credenciales de Meta a un tenant
+- `npm run script:clear-db`: Limpiar base de datos (desarrollo)
 
-## Integración con WhatsApp (MVP)
+## 🤖 Bot de WhatsApp
 
-El backend incorpora un bot experimental con `whatsapp-web.js` para validar flujos desde WhatsApp. Para activarlo:
+### Funcionalidades
 
-1. Define en `.env` las variables opcionales:
-   ```bash
-   WHATSAPP_ENABLED=true
-   # WHATSAPP_SESSION_PATH=.wwebjs_auth        # Opcional, directorio donde se guardará la sesión
-   # WHATSAPP_BROWSER_PATH="C:/Ruta/a/chrome.exe"  # Opcional, ruta a un navegador Chromium específico
-   ```
-2. Ejecuta `npm install` si aún no agregaste las dependencias nuevas.
-3. Inicia el servidor (`npm run dev`). En consola aparecerá un QR: escanéalo con la app de WhatsApp para vincular la cuenta de prueba.
+El bot permite a los clientes:
 
-### Comandos disponibles en el chat
+1. ✅ Ver el menú de hamburguesas
+2. ✅ Agregar productos al carrito
+3. ✅ Personalizar ingredientes (agregar/quitar)
+4. ✅ Seleccionar delivery o retiro
+5. ✅ Elegir método de pago (efectivo/transferencia)
+6. ✅ Confirmar y crear pedidos
 
-- `menu` / `help` / `ayuda`: muestra las instrucciones.
-- `servicios`: obtiene la lista actual de servicios desde Firestore.
-- `turnos`: responde con los próximos turnos registrados (máximo 5).
-- `reservar Nombre|Servicio|YYYY-MM-DD|HH:mm|Telefono`: crea un turno rápido validando la disponibilidad.
+### Comandos del Cliente
 
-> El bot ignora mensajes enviados por sí mismo y mensajes en grupos. Para reiniciar la sesión borra la carpeta configurada en `WHATSAPP_SESSION_PATH`.
+- `hola` / `buenas`: Saludo inicial
+- `menu` / `ayuda`: Ver ayuda
+- `hamburguesas` / `menu`: Ver productos disponibles
+- `pedir` / `ordenar`: Iniciar flujo de pedido
+- `cancelar`: Cancelar pedido actual
+- Números (1, 2, 3...): Seleccionar productos/opciones
 
-## Ejecución en desarrollo
+### Flujo de Conversación
+
+```
+Cliente: pedir
+Bot: [Muestra menú]
+
+Cliente: 1
+Bot: ¿Cuántas unidades?
+
+Cliente: 2
+Bot: ¿Deseas personalizarlo? (si/no)
+
+Cliente: si
+Bot: [Opciones de ingredientes]
+
+Cliente: listo
+Bot: ¿Agregar más productos? (si/no)
+
+Cliente: no
+Bot: ¿Delivery o retiro? (1/2)
+
+Cliente: 1
+Bot: Escribe tu dirección
+
+Cliente: Calle Falsa 123...
+Bot: ¿Cómo pagas? (1. Efectivo / 2. Transferencia)
+
+Cliente: 1
+Bot: [Resumen del pedido]
+     ¿Confirmamos? (confirmar/cancelar)
+
+Cliente: confirmar
+Bot: ✅ ¡Pedido confirmado! #ABC123
+```
+
+## 🔧 Arquitectura
+
+### Recepción de Mensajes (Webhook)
+
+```
+WhatsApp → Meta Cloud API → POST /api/webhook → processIncomingMessage() → Bot
+```
+
+### Envío de Mensajes (HTTP API)
+
+```
+Bot → metaService.sendMessage() → Graph API → WhatsApp
+```
+
+### Componentes Principales
+
+- **webhookController.ts**: Maneja verificación y recepción de webhooks de Meta
+- **burgerBotRefactored.ts**: Lógica del bot de pedidos (estado conversacional)
+- **metaService.ts**: Cliente HTTP para enviar mensajes vía Graph API
+- **tenantService.ts**: Gestión de multi-tenant (lookup por phoneNumberId)
+- **orderService.ts**: Creación y gestión de pedidos
+- **productService.ts**: Gestión de menú y productos
+
+## 📡 API Endpoints
+
+### Públicos (sin autenticación)
+
+- `GET /api/webhook`: Verificación de webhook de Meta
+- `POST /api/webhook`: Recepción de mensajes de WhatsApp
+
+### Protegidos (requieren API key)
+
+- `GET /api/tenants`: Listar tenants
+- `GET /api/products`: Listar productos
+- `POST /api/products`: Crear producto
+- `GET /api/orders`: Listar pedidos
+- `POST /api/orders`: Crear pedido manual
+- ... (ver Swagger en `/api-docs`)
+
+## 🚢 Despliegue
+
+### Railway / Render / Heroku
+
+1. Configura variables de entorno en el panel
+2. Conecta repositorio
+3. El servicio auto-detectará `npm start`
+4. Configura el webhook en Meta con tu URL
+
+### Render (render.yaml incluido)
+
+```bash
+git push origin main
+# Render detecta render.yaml y despliega automáticamente
+```
+
+### Verificar Despliegue
+
+```bash
+# Verificar que el servidor responde
+curl https://tu-dominio.com/health
+
+# Verificar webhook (debe devolver 403 sin parámetros)
+curl https://tu-dominio.com/api/webhook
+```
+
+## 🔍 Troubleshooting
+
+Ver [META_WHATSAPP_MIGRATION.md](./META_WHATSAPP_MIGRATION.md) sección "Troubleshooting".
+
+### Problemas Comunes
+
+**"Webhook verification failed"**
+
+- Verifica que `META_VERIFY_TOKEN` coincida exactamente
+- Revisa logs del servidor
+
+**"No se encontró tenant para phoneNumberId"**
+
+- Ejecuta `npm run script:add-meta-credentials`
+- Verifica que `metaPhoneNumberId` en Firestore coincida con el del webhook
+
+**"Error 401 Unauthorized"**
+
+- Token de Meta inválido o expirado
+- Genera nuevo token en Meta Business Manager
+
+## 📚 Recursos
+
+- [Meta WhatsApp Cloud API](https://developers.facebook.com/docs/whatsapp/cloud-api)
+- [Guía de Migración Completa](./META_WHATSAPP_MIGRATION.md)
+- [Firebase Admin SDK](https://firebase.google.com/docs/admin/setup)
+
+## 📝 Licencia
+
+Privado - AcaCoop
+name: "Mi Hamburguesería",
+isActive: true,
+metaPhoneNumberId: "123456789012345",
+metaAccessToken: "EAAxxxxx..."
+}
+
+```
+
+## Scripts disponibles
+
+- `npm run dev`: Servidor desarrollo con `ts-node`
+- `npm run typecheck`: Validar tipos TypeScript
+- `npm run build`: Compilar a JavaScript
+- `npm start`: Ejecutar servidor compilado
+- `npm run script:add-meta-credentials`: Agregar credenciales de Meta a un tenant
+- `npm run script:clear-db`: Limpiar base de datos (desarrollo)
+
+## 🤖 Bot de WhatsApp
+
+### Funcionalidades
+
+El bot permite a los clientes:
+
+1. ✅ Ver el menú de hamburguesas
+2. ✅ Agregar productos al carrito
+3. ✅ Personalizar ingredientes (agregar/quitar)
+4. ✅ Seleccionar delivery o retiro
+5. ✅ Elegir método de pago (efectivo/transferencia)
+6. ✅ Confirmar y crear pedidos
+
+### Comandos del Cliente
+
+- `hola` / `buenas`: Saludo inicial
+- `menu` / `ayuda`: Ver ayuda
+- `hamburguesas` / `menu`: Ver productos disponibles
+- `pedir` / `ordenar`: Iniciar flujo de pedido
+- `cancelar`: Cancelar pedido actual
+- Números (1, 2, 3...): Seleccionar productos/opciones
+
+### Flujo de Conversación
+
+```
+
+Cliente: pedir
+Bot: [Muestra menú]
+
+Cliente: 1
+Bot: ¿Cuántas unidades?
+
+Cliente: 2
+Bot: ¿Deseas personalizarlo? (si/no)
+
+Cliente: si
+Bot: [Opciones de ingredientes]
+
+Cliente: listo
+Bot: ¿Agregar más productos? (si/no)
+
+Cliente: no
+Bot: ¿Delivery o retiro? (1/2)
+
+Cliente: 1
+Bot: Escribe tu dirección
+
+Cliente: Calle Falsa 123...
+Bot: ¿Cómo pagas? (1. Efectivo / 2. Transferencia)
+
+Cliente: 1
+Bot: [Resumen del pedido]
+¿Confirmamos? (confirmar/cancelar)
+
+Cliente: confirmar
+Bot: ✅ ¡Pedido confirmado! #ABC123
+
+````
+
+## 🔧 Arquitectura
 
 ```bash
 npm run dev
-```
+````
 
 El servidor queda disponible en `http://localhost:3000` (o el puerto definido en `PORT`).
 

@@ -2,6 +2,7 @@ import cors, { type CorsOptions } from "cors";
 import express, { type Request, type Response } from "express";
 import swaggerUi from "swagger-ui-express";
 import routes from "./routes";
+import webhookRoutes from "./routes/webhookRoutes";
 import { errorHandler } from "./middlewares/errorHandler";
 import { logger } from "./utils/logger";
 import swaggerDocument from "./config/swagger";
@@ -46,6 +47,12 @@ app.get("/", (_req: Request, res: Response) => {
   });
 });
 
+// IMPORTANTE: Rutas del webhook de Meta ANTES del middleware authenticate
+// El webhook de Meta NO debe requerir autenticación JWT
+// La validación se hace mediante el verify_token y opcionalmente la firma
+app.use("/api/webhook", webhookRoutes);
+
+// Resto de rutas protegidas con autenticación
 app.use("/api", authenticate, routes);
 
 app.use((req: Request, res: Response) => {

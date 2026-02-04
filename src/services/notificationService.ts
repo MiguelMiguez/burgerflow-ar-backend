@@ -1,12 +1,13 @@
-import type { Client } from "whatsapp-web.js";
-import { getWhatsappClient } from "../bot/burgerBot";
 import { logger } from "../utils/logger";
 import type { Order, OrderStatus } from "../models/order";
+import { sendMessage } from "./metaService";
+import { getTenantById } from "./tenantService";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type WhatsappClient = Client & {
-  sendMessage: (chatId: string, message: string) => Promise<any>;
-};
+/**
+ * NOTA: Este servicio está parcialmente deshabilitado debido a la migración a Meta API.
+ * Las notificaciones ahora se envían directamente desde el bot refactorizado.
+ * Este archivo se mantiene para referencia futura.
+ */
 
 const STATUS_MESSAGES: Record<OrderStatus, (order: Order) => string> = {
   pendiente: (order) =>
@@ -96,37 +97,45 @@ export const sendOrderStatusNotification = async (
   order: Order,
   newStatus: OrderStatus,
 ): Promise<boolean> => {
-  const client = getWhatsappClient() as WhatsappClient | null;
-
-  if (!client) {
-    logger.warn(
-      `No se pudo enviar notificación - Cliente de WhatsApp no disponible`,
-    );
-    return false;
-  }
-
-  const messageGenerator = STATUS_MESSAGES[newStatus];
-  if (!messageGenerator) {
-    logger.warn(`No hay mensaje configurado para el estado: ${newStatus}`);
-    return false;
-  }
-
-  // Crear orden temporal con el nuevo estado para generar el mensaje
-  const orderWithNewStatus = { ...order, status: newStatus };
-  const message = messageGenerator(orderWithNewStatus);
-
-  // Usar whatsappChatId si está disponible, sino intentar con customerPhone
-  const chatId = order.whatsappChatId || getChatId(order.customerPhone);
-
   try {
-    await client.sendMessage(chatId, message);
+    // Obtener el tenant del pedido
+    const tenant = await getTenantById(order.tenantId);
+
+    if (!tenant) {
+      logger.warn(
+        `No se encontró tenant ${order.tenantId} para enviar notificación`,
+      );
+      return false;
+    }
+
+    // Verificar que el tenant tenga credenciales de Meta
+    if (!tenant.metaPhoneNumberId || !tenant.metaAccessToken) {
+      logger.warn(
+        `Tenant ${tenant.name} no tiene credenciales de Meta configuradas`,
+      );
+      return false;
+    }
+
+    const messageGenerator = STATUS_MESSAGES[newStatus];
+    if (!messageGenerator) {
+      logger.warn(`No hay mensaje configurado para el estado: ${newStatus}`);
+      return false;
+    }
+
+    // Crear orden temporal con el nuevo estado para generar el mensaje
+    const orderWithNewStatus = { ...order, status: newStatus };
+    const message = messageGenerator(orderWithNewStatus);
+
+    // Usar customerPhone directamente (sin formato @c.us)
+    await sendMessage(order.customerPhone, message, tenant);
+
     logger.info(
-      `Notificación enviada a ${order.customerPhone} (chatId: ${chatId}) - Pedido #${order.id.slice(-6)} -> ${newStatus}`,
+      `Notificación enviada a ${order.customerPhone} - Pedido #${order.id.slice(-6)} -> ${newStatus}`,
     );
     return true;
   } catch (error) {
     logger.error(
-      `Error al enviar notificación a ${order.customerPhone} (chatId: ${chatId})`,
+      `Error al enviar notificación a ${order.customerPhone}`,
       error,
     );
     return false;
@@ -139,20 +148,24 @@ export const sendOrderStatusNotification = async (
 export const sendWhatsappMessage = async (
   phone: string,
   message: string,
+  tenantId: string,
 ): Promise<boolean> => {
-  const client = getWhatsappClient() as WhatsappClient | null;
-
-  if (!client) {
-    logger.warn(
-      `No se pudo enviar mensaje - Cliente de WhatsApp no disponible`,
-    );
-    return false;
-  }
-
-  const chatId = getChatId(phone);
-
   try {
-    await client.sendMessage(chatId, message);
+    const tenant = await getTenantById(tenantId);
+
+    if (!tenant) {
+      logger.warn(`No se encontró tenant ${tenantId} para enviar mensaje`);
+      return false;
+    }
+
+    if (!tenant.metaPhoneNumberId || !tenant.metaAccessToken) {
+      logger.warn(
+        `Tenant ${tenant.name} no tiene credenciales de Meta configuradas`,
+      );
+      return false;
+    }
+
+    await sendMessage(phone, message, tenant);
     logger.info(`Mensaje enviado a ${phone}`);
     return true;
   } catch (error) {

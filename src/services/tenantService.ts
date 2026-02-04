@@ -43,6 +43,31 @@ export const getTenantById = async (id: string): Promise<Tenant> => {
   };
 };
 
+/**
+ * Busca un tenant por su metaPhoneNumberId
+ * Esta función es crítica para el webhook de Meta, ya que permite
+ * identificar a qué tenant pertenece un mensaje entrante
+ */
+export const getTenantByPhoneNumberId = async (
+  phoneNumberId: string,
+): Promise<Tenant | null> => {
+  if (!phoneNumberId) {
+    return null;
+  }
+
+  const snapshot = await getCollection()
+    .where("metaPhoneNumberId", "==", phoneNumberId)
+    .where("isActive", "==", true)
+    .limit(1)
+    .get();
+
+  if (snapshot.empty) {
+    return null;
+  }
+
+  return mapSnapshotToTenant(snapshot.docs[0]);
+};
+
 export const createTenant = async (
   payload: CreateTenantInput,
 ): Promise<Tenant> => {

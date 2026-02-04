@@ -1,7 +1,8 @@
 import app from "./app";
 import env from "./config/env";
 import { getFirestore } from "./config/firebase";
-import { startWhatsappBot } from "./bot/burgerBot";
+// TODO: Refactorizar después de migración a Meta API
+// import { startWhatsappBot } from "./bot/burgerBot";
 import { logger } from "./utils/logger";
 
 const start = async (): Promise<void> => {
@@ -9,8 +10,12 @@ const start = async (): Promise<void> => {
     await getFirestore();
     app.listen(env.port, () => {
       logger.info(`Servidor escuchando en http://localhost:${env.port}`);
+      logger.info("WhatsApp Bot: Usando Meta Business API (webhooks)");
     });
 
+    // TODO: Remover después de completar migración a Meta API
+    // El bot ahora funciona por webhooks, no requiere inicialización
+    /* 
     if (env.whatsappEnabled) {
       logger.info("Inicializando bot de WhatsApp...");
       startWhatsappBot();
@@ -19,8 +24,9 @@ const start = async (): Promise<void> => {
         "Bot de WhatsApp deshabilitado. Define WHATSAPP_ENABLED=true para activarlo.",
       );
     }
+    */
   } catch (error) {
-    logger.error("No se pudo iniciar el servidor", error);
+    logger.error("No se pudo iniciar el servidor");
     process.exit(1);
   }
 };
