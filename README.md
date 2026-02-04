@@ -2,19 +2,6 @@
 
 Backend de gestión de pedidos de hamburguesas con sistema multi-tenant. Integración con Meta WhatsApp Business Cloud API para tomar pedidos por WhatsApp.
 
-## 🚀 Migración a Meta WhatsApp Cloud API
-
-**⚠️ IMPORTANTE**: Este proyecto fue migrado de `whatsapp-web.js` a la **Meta WhatsApp Business Cloud API oficial**.
-
-📖 **Lee la guía completa de migración**: [META_WHATSAPP_MIGRATION.md](./META_WHATSAPP_MIGRATION.md)
-
-### Cambios Principales
-
-- ❌ Eliminado: `whatsapp-web.js`, `qrcode-terminal`, `puppeteer`
-- ✅ Agregado: `axios`, Meta WhatsApp Business Cloud API (webhook + HTTP API)
-- 🔄 Arquitectura: De emulación de navegador a webhook oficial
-- 🏢 Multi-tenant: Cada negocio con sus propias credenciales de WhatsApp
-
 ## Requisitos previos
 
 - Node.js 18 o superior
