@@ -99,6 +99,11 @@ export const receiveWebhook = async (
   res: Response,
 ): Promise<void> => {
   try {
+    logger.info("========================================");
+    logger.info("🔔 WEBHOOK RECIBIDO DE META");
+    logger.info(`Body completo: ${JSON.stringify(req.body, null, 2)}`);
+    logger.info("========================================");
+
     const payload = req.body as MetaWebhookPayload;
 
     // Validar que sea un webhook de WhatsApp Business
@@ -118,6 +123,7 @@ export const receiveWebhook = async (
     });
   } catch (error) {
     logger.error("Error en receiveWebhook", error);
+    logger.error(`Stack trace: ${error}`);
     // Aún así responder 200 para evitar reintentos
     res.sendStatus(200);
   }
