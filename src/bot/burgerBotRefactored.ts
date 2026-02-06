@@ -47,6 +47,7 @@ type ConversationStep =
   | "selectingQuantity"
   | "selectingExtras"
   | "askingCustomization"
+  | "selectingCustomizationType"
   | "selectingCustomization"
   | "askingMoreProducts"
   | "selectingOrderType"
@@ -76,6 +77,7 @@ interface ConversationState {
   currentProduct?: Product;
   currentQuantity?: number;
   availableExtras?: Extra[];
+  customizationType?: "agregar" | "quitar";
   orderType?: "delivery" | "pickup";
   selectedZone?: DeliveryZone;
   deliveryAddress?: string;
@@ -342,7 +344,7 @@ const handleQuantitySelection = async (
 
       await sendMessage(
         phoneNumber,
-        `Agregaste ${quantity}x *${state.currentProduct.name}* al carrito.\n\n¿Deseas personalizar este producto? (quitar/agregar ingredientes)\n\nResponde *si* o *no*.`,
+        `Agregaste ${quantity}x *${state.currentProduct.name}* al carrito.\n\n¿Deseas agregar o quitar algo?\n\n*1.* Sí\n*2.* No`,
         tenant,
       );
     }
@@ -358,7 +360,7 @@ const handleQuantitySelection = async (
 
     await sendMessage(
       phoneNumber,
-      `Agregaste ${quantity}x *${state.currentProduct.name}* al carrito.\n\n¿Deseas personalizar este producto? (quitar/agregar ingredientes)\n\nResponde *si* o *no*.`,
+      `Agregaste ${quantity}x *${state.currentProduct.name}* al carrito.\n\n¿Deseas agregar o quitar algo?\n\n*1.* Sí\n*2.* No`,
       tenant,
     );
   }
@@ -382,7 +384,7 @@ const handleExtrasSelection = async (
 
     await sendMessage(
       phoneNumber,
-      `¿Deseas personalizar el producto? (quitar/agregar ingredientes)\n\nResponde *si* o *no*.`,
+      `¿Deseas agregar o quitar algo del producto?\n\n*1.* Sí\n*2.* No`,
       tenant,
     );
     return;
@@ -437,22 +439,21 @@ const handleCustomizationQuestion = async (
 ): Promise<void> => {
   const normalized = text.trim().toLowerCase();
 
-  if (normalized === "si" || normalized === "sí") {
+  if (normalized === "si" || normalized === "sí" || normalized === "1") {
     if (!state.currentProduct) {
       await askForMoreProducts(phoneNumber, state, tenant);
       return;
     }
 
-    const ingredients = state.currentProduct.ingredients
-      .filter((ing) => ing.isRemovable || ing.isExtra)
-      .map((ing, index) => {
-        const type = ing.isExtra ? "(extra)" : "(quitar)";
-        const price =
-          ing.extraPrice > 0 ? ` +${formatPrice(ing.extraPrice)}` : "";
-        return `${index + 1}. ${ing.ingredientName} ${type}${price}`;
-      });
+    // Verificar si hay opciones de personalización disponibles
+    const removableIngredients = state.currentProduct.ingredients.filter(
+      (ing) => ing.isRemovable,
+    );
+    const extraIngredients = state.currentProduct.ingredients.filter(
+      (ing) => ing.isExtra,
+    );
 
-    if (ingredients.length === 0) {
+    if (removableIngredients.length === 0 && extraIngredients.length === 0) {
       await sendMessage(
         phoneNumber,
         "Este producto no tiene opciones de personalización disponibles.",
@@ -464,17 +465,100 @@ const handleCustomizationQuestion = async (
 
     setConversationState(phoneNumber, {
       ...state,
-      step: "selectingCustomization",
+      step: "selectingCustomizationType",
     });
 
     await sendMessage(
       phoneNumber,
-      `Opciones de personalización:\n\n${ingredients.join("\n")}\n\nEscribe el número de la opción o *listo* para continuar.`,
+      `¿Qué deseas hacer?\n\n*1.* ➕ Agregar ingredientes\n*2.* ➖ Quitar ingredientes\n\nEscribe el *número* de la opción.`,
       tenant,
     );
-  } else {
+  } else if (normalized === "no" || normalized === "2") {
     await askForMoreProducts(phoneNumber, state, tenant);
+  } else {
+    await sendMessage(
+      phoneNumber,
+      "Por favor, responde *1* (Sí) o *2* (No).",
+      tenant,
+    );
   }
+};
+
+const handleCustomizationTypeSelection = async (
+  phoneNumber: string,
+  text: string,
+  state: ConversationState,
+  tenant: Tenant,
+): Promise<void> => {
+  const normalized = text.trim().toLowerCase();
+
+  // Opción para continuar sin personalización
+  if (normalized === "3" || normalized === "continuar" || normalized === "listo") {
+    await askForMoreProducts(phoneNumber, state, tenant);
+    return;
+  }
+
+  if (!state.currentProduct) {
+    await askForMoreProducts(phoneNumber, state, tenant);
+    return;
+  }
+
+  let customizationType: "agregar" | "quitar";
+  let ingredients: { ingredientId: string; ingredientName: string; extraPrice: number }[];
+
+  if (normalized === "1" || normalized.includes("agregar")) {
+    customizationType = "agregar";
+    ingredients = state.currentProduct.ingredients
+      .filter((ing) => ing.isExtra)
+      .map((ing) => ({
+        ingredientId: ing.ingredientId,
+        ingredientName: ing.ingredientName,
+        extraPrice: ing.extraPrice || 0,
+      }));
+  } else if (normalized === "2" || normalized.includes("quitar")) {
+    customizationType = "quitar";
+    ingredients = state.currentProduct.ingredients
+      .filter((ing) => ing.isRemovable)
+      .map((ing) => ({
+        ingredientId: ing.ingredientId,
+        ingredientName: ing.ingredientName,
+        extraPrice: 0,
+      }));
+  } else {
+    await sendMessage(
+      phoneNumber,
+      "Por favor, escribe *1* para agregar, *2* para quitar o *3* para continuar.",
+      tenant,
+    );
+    return;
+  }
+
+  if (ingredients.length === 0) {
+    await sendMessage(
+      phoneNumber,
+      `No hay opciones disponibles para ${customizationType}. ¿Deseas hacer otra cosa?\n\n*1.* ➕ Agregar ingredientes\n*2.* ➖ Quitar ingredientes\n*3.* Continuar sin cambios`,
+      tenant,
+    );
+    return;
+  }
+
+  setConversationState(phoneNumber, {
+    ...state,
+    step: "selectingCustomization",
+    customizationType,
+  });
+
+  const ingredientsList = ingredients.map((ing, index) => {
+    const price = ing.extraPrice > 0 ? ` (+${formatPrice(ing.extraPrice)})` : "";
+    return `*${index + 1}.* ${ing.ingredientName}${price}`;
+  });
+
+  const actionText = customizationType === "agregar" ? "agregar" : "quitar";
+  await sendMessage(
+    phoneNumber,
+    `Ingredientes disponibles para ${actionText}:\n\n${ingredientsList.join("\n")}\n\nEscribe el *número* del ingrediente o *listo* para continuar.`,
+    tenant,
+  );
 };
 
 const handleCustomizationSelection = async (
@@ -485,7 +569,24 @@ const handleCustomizationSelection = async (
 ): Promise<void> => {
   const normalized = text.trim().toLowerCase();
 
-  if (normalized === "listo") {
+  if (normalized === "listo" || normalized === "continuar") {
+    // Preguntar si quiere hacer más personalizaciones
+    setConversationState(phoneNumber, {
+      ...state,
+      step: "selectingCustomizationType",
+      customizationType: undefined,
+    });
+
+    await sendMessage(
+      phoneNumber,
+      `¿Deseas hacer otra personalización?\n\n*1.* ➕ Agregar ingredientes\n*2.* ➖ Quitar ingredientes\n*3.* Continuar con el pedido`,
+      tenant,
+    );
+    return;
+  }
+
+  // Opción 3 desde el menú de tipo de personalización
+  if (normalized === "3") {
     await askForMoreProducts(phoneNumber, state, tenant);
     return;
   }
@@ -497,8 +598,10 @@ const handleCustomizationSelection = async (
     return;
   }
 
+  // Filtrar según el tipo de personalización seleccionado
+  const customizationType = state.customizationType || "quitar";
   const availableCustomizations = state.currentProduct.ingredients.filter(
-    (ing) => ing.isRemovable || ing.isExtra,
+    (ing) => customizationType === "agregar" ? ing.isExtra : ing.isRemovable,
   );
 
   if (
@@ -518,14 +621,20 @@ const handleCustomizationSelection = async (
   const customization: OrderCustomization = {
     ingredientId: selectedIngredient.ingredientId,
     ingredientName: selectedIngredient.ingredientName,
-    type: selectedIngredient.isExtra ? "agregar" : "quitar",
-    extraPrice: selectedIngredient.extraPrice || 0,
+    type: customizationType,
+    extraPrice: customizationType === "agregar" ? (selectedIngredient.extraPrice || 0) : 0,
   };
 
   const updatedCart = [...state.cart];
   const lastItem = updatedCart[updatedCart.length - 1];
   if (lastItem) {
-    lastItem.customizations.push(customization);
+    // Verificar que no se agregue la misma personalización dos veces
+    const alreadyExists = lastItem.customizations.some(
+      (c) => c.ingredientId === customization.ingredientId && c.type === customization.type,
+    );
+    if (!alreadyExists) {
+      lastItem.customizations.push(customization);
+    }
   }
 
   setConversationState(phoneNumber, {
@@ -533,10 +642,11 @@ const handleCustomizationSelection = async (
     cart: updatedCart,
   });
 
-  const action = customization.type === "agregar" ? "Agregaste" : "Quitaste";
+  const action = customization.type === "agregar" ? "✅ Agregaste" : "❌ Quitaste";
+  const priceInfo = customization.extraPrice > 0 ? ` (+${formatPrice(customization.extraPrice)})` : "";
   await sendMessage(
     phoneNumber,
-    `${action} *${customization.ingredientName}*.\n\nEscribe otro número para más cambios o *listo* para continuar.`,
+    `${action} *${customization.ingredientName}*${priceInfo}\n\nEscribe otro número para más cambios o *listo* para continuar.`,
     tenant,
   );
 };
@@ -1108,7 +1218,17 @@ const handleOrderConfirmation = async (
       tenant,
     );
   } catch (error) {
-    logger.error("Error al crear el pedido");
+    logger.error("Error al crear el pedido", {
+      error: error instanceof Error ? error.message : error,
+      stack: error instanceof Error ? error.stack : undefined,
+      orderInput: {
+        tenantId: state.tenantId,
+        customerName: state.customerName,
+        orderType: state.orderType,
+        deliveryAddress: state.deliveryAddress,
+        itemsCount: state.cart.length,
+      },
+    });
 
     if (isHttpError(error)) {
       await sendMessage(
@@ -1176,6 +1296,10 @@ export const processIncomingMessage = async (
 
     case "askingCustomization":
       await handleCustomizationQuestion(phoneNumber, text, state, tenant);
+      return;
+
+    case "selectingCustomizationType":
+      await handleCustomizationTypeSelection(phoneNumber, text, state, tenant);
       return;
 
     case "selectingCustomization":
