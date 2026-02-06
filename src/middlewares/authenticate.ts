@@ -49,26 +49,31 @@ export const authenticate = async (
     
     if (authHeader?.startsWith("Bearer ")) {
       const idToken = authHeader.substring(7);
+      logger.info(`🔍 Intentando verificar token Firebase: ${idToken.substring(0, 20)}...`);
       
       try {
         const userData = await verifyAuthToken(idToken);
+        logger.info(`✅ Token verificado para usuario: ${userData.uid} (tenant: ${userData.tenantId})`);
         
+        // ASIGNAR req.user PARA QUE ESTÉ DISPONIBLE EN LOS CONTROLADORES
         req.user = {
           uid: userData.uid,
           tenantId: userData.tenantId,
           role: userData.role as "owner" | "admin" | "employee",
         };
         
+        logger.info(`✅ req.user asignado correctamente. Continuando...`);
         next();
         return;
       } catch (error) {
-        logger.warn(`Token de Firebase inválido: ${error}`);
+        logger.error(`❌ Error al verificar token Firebase:`, error);
         next(new HttpError(401, "Token inválido o expirado"));
         return;
       }
     }
 
     // 2. Fallback a autenticación legacy con API Keys
+    logger.info(`⚠️ No se encontró Bearer token, intentando API Key...`);
     const apiKeyHeader = req.header("x-api-key");
     const apiKeyQuery =
       typeof req.query.apiKey === "string" ? req.query.apiKey : undefined;
@@ -78,7 +83,7 @@ export const authenticate = async (
 
     if (!role) {
       logger.warn(
-        `Intento de acceso no autorizado a ${req.method} ${req.originalUrl}`
+        `❌ Intento de acceso no autorizado a ${req.method} ${req.originalUrl} - sin token Firebase ni API key válida`
       );
       next(new HttpError(401, "Requiere autenticación válida."));
       return;
@@ -86,6 +91,7 @@ export const authenticate = async (
 
     // Mantener compatibilidad con código legacy
     req.userRole = role;
+    logger.info(`✅ API Key válida detectada con role: ${role}`);
     
     next();
   } catch (error) {

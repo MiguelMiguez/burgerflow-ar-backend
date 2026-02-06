@@ -176,6 +176,8 @@ export const handleGoogleSignIn = async (
       return;
     }
 
+    logger.info(`🔍 Google Sign-In request: uid=${uid}, email=${email}, has tenantName=${!!tenantName}`);
+
     const result = await googleSignIn({
       uid,
       email,
@@ -183,11 +185,14 @@ export const handleGoogleSignIn = async (
       tenantName,
     });
 
+    logger.info(`✅ Google Sign-In exitoso para ${email}`);
+
     res.status(200).json({
       message: "Autenticación con Google exitosa",
       data: result,
     });
   } catch (error) {
+    logger.error(`❌ Error en Google Sign-In:`, error);
     next(error);
   }
 };

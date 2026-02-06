@@ -4,12 +4,25 @@ import { HttpError } from "../utils/httpError";
 
 export const authorize = (...allowedRoles: UserRole[]) => {
   return (req: Request, _res: Response, next: NextFunction): void => {
-    if (!req.userRole) {
+    // Verificar si tiene autenticación (Firebase o Legacy API Key)
+    const hasFirebaseAuth = !!req.user;
+    const hasApiKeyAuth = !!req.userRole;
+    
+    if (!hasFirebaseAuth && !hasApiKeyAuth) {
       next(new HttpError(401, "Requiere autenticación válida."));
       return;
     }
 
-    if (!allowedRoles.includes(req.userRole)) {
+    // Obtener el role del usuario
+    const userRole = req.user?.role || req.userRole;
+
+    // Los "owner" siempre tienen acceso (son administradores de su tenant)
+    if (userRole === "owner") {
+      next();
+      return;
+    }
+
+    if (!userRole || !allowedRoles.includes(userRole as UserRole)) {
       next(
         new HttpError(
           403,

@@ -171,16 +171,80 @@ export const getUsersByTenant = async (tenantId: string): Promise<User[]> => {
 };
 
 /**
- * Verifica un token de Firebase Auth y devuelve los datos del usuario
+ * Actualiza el perfil de un usuario
  */
+export const updateUserProfile = async (
+  uid: string,
+  updates: {
+    meta?: {
+      phoneNumberId?: string;
+      accessToken?: string;
+    };
+  }
+): Promise<User> => {
+  try {
+    logger.info(`📝 Actualizando perfil del usuario: ${uid}`);
+
+    // Obtener el documento actual del usuario
+    const userDoc = await db.collection(USERS_COLLECTION).doc(uid).get();
+
+    if (!userDoc.exists) {
+      throw new HttpError(404, "Usuario no encontrado");
+    }
+
+    const currentUser = userDoc.data() as User;
+
+    // Preparar los datos a actualizar
+    const updateData: Partial<Omit<User, "uid">> = {};
+
+    // Actualizar Meta datos si se proporcionan
+    if (updates.meta) {
+      updateData.meta = {
+        phoneNumberId: updates.meta.phoneNumberId || currentUser.meta?.phoneNumberId || "",
+        accessToken: updates.meta.accessToken || currentUser.meta?.accessToken || "",
+      };
+      logger.info(`✅ Credenciales de Meta actualizadas para: ${uid}`);
+    }
+
+    // Actualizar el documento
+    await db.collection(USERS_COLLECTION).doc(uid).update(updateData);
+
+    // Obtener y devolver el usuario actualizado
+    const updatedUserDoc = await db.collection(USERS_COLLECTION).doc(uid).get();
+    const updatedUserData = updatedUserDoc.data() as Omit<User, "uid">;
+
+    return {
+      uid,
+      ...updatedUserData,
+    } as User;
+  } catch (error: unknown) {
+    if (error instanceof HttpError) {
+      throw error;
+    }
+
+    if (error instanceof Error) {
+      logger.error(`Error al actualizar perfil del usuario: ${error.message}`);
+      throw new HttpError(500, `Error al actualizar perfil: ${error.message}`);
+    }
+
+    logger.error(`Error desconocido al actualizar perfil del usuario`);
+    throw new HttpError(500, "Error desconocido al actualizar perfil");
+  }
+};
+
+
 export const verifyAuthToken = async (
   idToken: string
 ): Promise<{ uid: string; tenantId: string; role: string }> => {
   try {
+    logger.info("🔐 Verificando token con Firebase Admin...");
     const decodedToken = await admin.auth().verifyIdToken(idToken);
+    logger.info(`✅ Token válido para UID: ${decodedToken.uid}`);
 
     // Obtener datos adicionales del usuario
+    logger.info(`📖 Buscando usuario en Firestore: /users/${decodedToken.uid}`);
     const userData = await getUserByUid(decodedToken.uid);
+    logger.info(`✅ Usuario encontrado: ${userData.email} (tenant: ${userData.tenantId})`);
 
     return {
       uid: decodedToken.uid,
@@ -188,7 +252,7 @@ export const verifyAuthToken = async (
       role: userData.role,
     };
   } catch (error) {
-    logger.error(`Error al verificar token: ${error}`);
+    logger.error(`❌ Error al verificar token:`, error);
     throw new HttpError(401, "Token inválido o expirado");
   }
 };
@@ -205,11 +269,14 @@ export const googleSignIn = async (input: {
   tenantName?: string;
 }): Promise<AuthResponse> => {
   try {
+    logger.info(`🔐 Iniciando Google Sign-In para ${input.email}`);
+
     // Verificar si el usuario ya existe en Firestore
     const userDoc = await db.collection(USERS_COLLECTION).doc(input.uid).get();
 
     if (userDoc.exists) {
       // Usuario existente: devolver sus datos
+      logger.info(`ℹ️ Usuario ya existe en Firestore: ${input.email}`);
       const userData = userDoc.data() as User;
 
       if (!userData.isActive) {
@@ -221,7 +288,7 @@ export const googleSignIn = async (input: {
         role: userData.role,
       });
 
-      logger.info(`Usuario de Google autenticado: ${input.email}`);
+      logger.info(`✅ Usuario de Google autenticado: ${input.email}`);
 
       return {
         uid: input.uid,
@@ -232,13 +299,18 @@ export const googleSignIn = async (input: {
         customToken,
       };
     } else {
-      // Usuario nuevo: crear tenant y documento de usuario
+      // Usuario nuevo: requiere tenantName
+      logger.info(`👤 Usuario nuevo en Google Sign-In: ${input.email}`);
+      
       if (!input.tenantName) {
+        logger.warn(`⚠️ Usuario nuevo sin tenantName: ${input.email}`);
         throw new HttpError(
           400,
           "tenantName es requerido para nuevos usuarios de Google"
         );
       }
+
+      logger.info(`📋 Creando tenant y usuario para ${input.email}`);
 
       // Crear el tenant
       const tenantData: Omit<Tenant, "id"> = {
@@ -253,7 +325,9 @@ export const googleSignIn = async (input: {
       const tenantRef = await db.collection(TENANTS_COLLECTION).add(tenantData);
       const tenantId = tenantRef.id;
 
-      // Crear documento de usuario
+      logger.info(`✅ Tenant creado: ${tenantId} (${input.tenantName})`);
+
+      // Crear documento de usuario con credenciales de Meta vacías (se configurarán después)
       const userData: Omit<User, "uid"> = {
         email: input.email,
         displayName: input.displayName,
@@ -261,9 +335,16 @@ export const googleSignIn = async (input: {
         role: "owner",
         isActive: true,
         createdAt: new Date().toISOString(),
+        // Meta credentials - cada usuario tiene los suyos, inicialmente vacíos
+        meta: {
+          phoneNumberId: "",
+          accessToken: "",
+        },
       };
 
       await db.collection(USERS_COLLECTION).doc(input.uid).set(userData);
+
+      logger.info(`✅ Usuario documento creado en Firestore: ${input.uid}`);
 
       const customToken = await admin.auth().createCustomToken(input.uid, {
         tenantId,
@@ -271,7 +352,7 @@ export const googleSignIn = async (input: {
       });
 
       logger.info(
-        `Nuevo usuario de Google registrado: ${input.email} (Tenant: ${input.tenantName})`
+        `✅ Nuevo usuario de Google registrado: ${input.email} (Tenant: ${input.tenantName})`
       );
 
       return {
@@ -285,6 +366,7 @@ export const googleSignIn = async (input: {
     }
   } catch (error: unknown) {
     if (error instanceof HttpError) {
+      logger.error(`HttpError en googleSignIn: ${error.message}`);
       throw error;
     }
 
@@ -293,6 +375,7 @@ export const googleSignIn = async (input: {
       throw new HttpError(500, `Error en Google Sign-In: ${error.message}`);
     }
 
+    logger.error(`Error desconocido en Google Sign-In`);
     throw new HttpError(500, "Error desconocido en Google Sign-In");
   }
 };

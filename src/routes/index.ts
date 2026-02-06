@@ -1,5 +1,6 @@
 import { Router } from "express";
 import authRoutes from "./authRoutes";
+import userRoutes from "./userRoutes";
 import tenantRoutes from "./tenantRoutes";
 import productRoutes from "./productRoutes";
 import ingredientRoutes from "./ingredientRoutes";
@@ -19,6 +20,9 @@ router.use("/auth", authRoutes);
 
 // Todas las demás rutas requieren autenticación
 router.use(authenticate);
+
+// Rutas de usuarios
+router.use("/users", userRoutes);
 
 // Rutas de administración de tenants (hamburgueserías)
 router.use("/tenants", tenantRoutes);

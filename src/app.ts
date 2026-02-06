@@ -8,6 +8,20 @@ import { logger } from "./utils/logger";
 import swaggerDocument from "./config/swagger";
 import { authenticate } from "./middlewares/authenticate";
 
+// Extender el tipo Request de Express con nuestros campos custom
+declare global {
+  namespace Express {
+    interface Request {
+      user?: {
+        uid: string;
+        tenantId: string;
+        role: "owner" | "admin" | "employee";
+      };
+      userRole?: "admin" | "user"; // DEPRECATED: Legacy API Key authentication
+    }
+  }
+}
+
 const app = express();
 
 const corsOptions: CorsOptions = {

@@ -13,12 +13,21 @@ export interface User {
   role: "owner" | "admin" | "employee";
   isActive: boolean;
   createdAt: string;
+  // Meta WhatsApp Business - cada usuario tiene sus propias credenciales
+  meta?: {
+    phoneNumberId: string;
+    accessToken: string;
+  };
 }
 
 export interface UpdateUserInput {
   displayName?: string;
   role?: "owner" | "admin" | "employee";
   isActive?: boolean;
+  meta?: {
+    phoneNumberId?: string;
+    accessToken?: string;
+  };
 }
 
 export interface LoginInput {

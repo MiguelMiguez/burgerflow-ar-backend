@@ -16,6 +16,12 @@ import { HttpError } from "../utils/httpError";
 import { logger } from "../utils/logger";
 
 const getTenantId = (req: Request): string => {
+  // Priorizar tenantId del usuario autenticado con Firebase
+  if (req.user?.tenantId) {
+    return req.user.tenantId;
+  }
+  
+  // Fallback: buscar en params o headers (legacy)
   const tenantId = req.params.tenantId || req.headers["x-tenant-id"];
   if (!tenantId || typeof tenantId !== "string") {
     throw new HttpError(400, "Se requiere el identificador del tenant.");

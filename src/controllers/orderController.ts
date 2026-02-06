@@ -21,6 +21,12 @@ import { HttpError } from "../utils/httpError";
 import { logger } from "../utils/logger";
 
 const getTenantId = (req: Request): string | null => {
+  // Priorizar tenantId del usuario autenticado con Firebase
+  if (req.user?.tenantId) {
+    return req.user.tenantId;
+  }
+  
+  // Fallback: buscar en params o headers (legacy)
   const tenantId = req.params.tenantId || req.headers["x-tenant-id"];
   if (!tenantId || typeof tenantId !== "string") {
     return null;
@@ -44,7 +50,9 @@ export const handleListOrders = async (
   try {
     const tenantId = getTenantId(req);
     const { status, date, pending } = req.query;
-    const isAdmin = req.userRole === "admin";
+    
+    // Verificar si el usuario es admin (solo si no hay tenantId, en cuyo caso el usuario debe ser admin)
+    const isAdmin = !tenantId && req.user?.role === "admin";
 
     let orders;
 
