@@ -1,16 +1,12 @@
 export interface CreateDeliveryZoneInput {
   tenantId: string;
-  name: string;
-  minDistance: number;
-  maxDistance: number;
-  cost: number;
+  name: string; // ej: "Burzaco", "Centro", "Zona Norte"
+  price: number; // Costo fijo de envío a esta zona
 }
 
 export interface UpdateDeliveryZoneInput {
   name?: string;
-  minDistance?: number;
-  maxDistance?: number;
-  cost?: number;
+  price?: number;
   isActive?: boolean;
 }
 

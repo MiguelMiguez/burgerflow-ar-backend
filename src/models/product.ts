@@ -6,6 +6,8 @@ export type ProductCategory =
   | "vegetariana"
   | "combo";
 
+export type ProductUnit = "unidades" | "kg" | "litros";
+
 export interface ProductIngredient {
   ingredientId: string;
   ingredientName: string;
@@ -24,6 +26,8 @@ export interface CreateProductInput {
   image?: string;
   category: ProductCategory;
   ingredients: ProductIngredient[];
+  stock?: number; // Stock del producto finalizado (unidades disponibles)
+  unit?: ProductUnit; // Tipo de medida del stock
   available?: boolean;
 }
 
@@ -34,11 +38,15 @@ export interface UpdateProductInput {
   image?: string;
   category?: ProductCategory;
   ingredients?: ProductIngredient[];
+  stock?: number;
+  unit?: ProductUnit;
   available?: boolean;
 }
 
-export interface Product extends Omit<CreateProductInput, "available"> {
+export interface Product extends Omit<CreateProductInput, "available" | "stock" | "unit"> {
   id: string;
+  stock: number;
+  unit: ProductUnit;
   available: boolean;
   createdAt: string;
 }

@@ -90,6 +90,8 @@ export const createProduct = async (
 
   const document: ProductDocument = {
     ...payload,
+    stock: payload.stock ?? 0,
+    unit: payload.unit ?? "unidades",
     available: payload.available ?? true,
     createdAt: new Date().toISOString(),
   };

@@ -1,6 +1,5 @@
 import { NextFunction, Request, Response } from "express";
 import {
-  calculateDeliveryCost,
   createDeliveryZone,
   deleteDeliveryZone,
   getDeliveryZoneById,
@@ -63,31 +62,6 @@ export const handleGetDeliveryZone = async (
   }
 };
 
-export const handleCalculateDeliveryCost = async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-): Promise<void> => {
-  try {
-    const tenantId = getTenantId(req);
-    const { distance } = req.query;
-
-    if (!distance || typeof distance !== "string") {
-      throw new HttpError(400, "Se requiere la distancia en km.");
-    }
-
-    const distanceNum = parseFloat(distance);
-    if (isNaN(distanceNum) || distanceNum < 0) {
-      throw new HttpError(400, "La distancia debe ser un número válido.");
-    }
-
-    const cost = await calculateDeliveryCost(tenantId, distanceNum);
-    res.json({ distance: distanceNum, cost });
-  } catch (error) {
-    next(error);
-  }
-};
-
 export const handleCreateDeliveryZone = async (
   req: Request,
   res: Response,
@@ -104,25 +78,8 @@ export const handleCreateDeliveryZone = async (
       throw new HttpError(400, "La zona debe tener un nombre.");
     }
 
-    if (payload.minDistance === undefined || payload.minDistance < 0) {
-      throw new HttpError(
-        400,
-        "La distancia mínima debe ser un número válido.",
-      );
-    }
-
-    if (
-      payload.maxDistance === undefined ||
-      payload.maxDistance <= payload.minDistance
-    ) {
-      throw new HttpError(
-        400,
-        "La distancia máxima debe ser mayor a la mínima.",
-      );
-    }
-
-    if (payload.cost === undefined || payload.cost < 0) {
-      throw new HttpError(400, "El costo debe ser un número válido.");
+    if (payload.price === undefined || payload.price < 0) {
+      throw new HttpError(400, "El precio debe ser un número válido.");
     }
 
     const zone = await createDeliveryZone(payload);

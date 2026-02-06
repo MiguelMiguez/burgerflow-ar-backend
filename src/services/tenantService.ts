@@ -75,8 +75,14 @@ export const createTenant = async (
     throw new HttpError(400, "El tenant debe tener un nombre.");
   }
 
+  if (!payload.ownerId) {
+    throw new HttpError(400, "El tenant debe tener un ownerId (Firebase UID).");
+  }
+
   const document: TenantDocument = {
     ...payload,
+    hasPickup: payload.hasPickup ?? true,
+    hasDelivery: payload.hasDelivery ?? false,
     isActive: true,
     createdAt: new Date().toISOString(),
   };

@@ -1,6 +1,5 @@
 import { Router } from "express";
 import {
-  handleCalculateDeliveryCost,
   handleCreateDeliveryZone,
   handleDeleteDeliveryZone,
   handleGetDeliveryZone,
@@ -13,13 +12,6 @@ const router = Router();
 
 // Listar zonas de delivery (con filtro: ?active=true)
 router.get("/", authorize("admin", "user"), handleListDeliveryZones);
-
-// Calcular costo de envío por distancia (?distance=5.5)
-router.get(
-  "/calculate",
-  authorize("admin", "user"),
-  handleCalculateDeliveryCost,
-);
 
 // Obtener zona por ID
 router.get("/:id", authorize("admin", "user"), handleGetDeliveryZone);

@@ -13,7 +13,8 @@ const app = express();
 const corsOptions: CorsOptions = {
   origin: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "x-api-key", "x-tenant-id"],
+  allowedHeaders: ["Content-Type", "Authorization", "x-api-key", "x-tenant-id"],
+  credentials: true,
   optionsSuccessStatus: 204,
 };
 
@@ -52,8 +53,10 @@ app.get("/", (_req: Request, res: Response) => {
 // La validación se hace mediante el verify_token y opcionalmente la firma
 app.use("/api/webhook", webhookRoutes);
 
-// Resto de rutas protegidas con autenticación
-app.use("/api", authenticate, routes);
+// Rutas de la API
+// Nota: La autenticación se aplica a nivel de ruta individual, no globalmente
+// Las rutas públicas (register, login, google-signin) NO requieren autenticación
+app.use("/api", routes);
 
 app.use((req: Request, res: Response) => {
   logger.warn(`Ruta no encontrada: ${req.method} ${req.path}`);

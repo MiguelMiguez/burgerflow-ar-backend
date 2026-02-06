@@ -34,7 +34,7 @@ const mapSnapshotToDeliveryZone = (
 export const listDeliveryZones = async (
   tenantId: string,
 ): Promise<DeliveryZone[]> => {
-  const snapshot = await getCollection(tenantId).orderBy("minDistance").get();
+  const snapshot = await getCollection(tenantId).orderBy("name").get();
   return snapshot.docs.map(mapSnapshotToDeliveryZone);
 };
 
@@ -43,7 +43,7 @@ export const listActiveDeliveryZones = async (
 ): Promise<DeliveryZone[]> => {
   const snapshot = await getCollection(tenantId)
     .where("isActive", "==", true)
-    .orderBy("minDistance")
+    .orderBy("name")
     .get();
   return snapshot.docs.map(mapSnapshotToDeliveryZone);
 };
@@ -65,35 +65,6 @@ export const getDeliveryZoneById = async (
   };
 };
 
-export const getDeliveryZoneByDistance = async (
-  tenantId: string,
-  distance: number,
-): Promise<DeliveryZone | null> => {
-  const zones = await listActiveDeliveryZones(tenantId);
-
-  const matchingZone = zones.find(
-    (zone) => distance >= zone.minDistance && distance <= zone.maxDistance,
-  );
-
-  return matchingZone || null;
-};
-
-export const calculateDeliveryCost = async (
-  tenantId: string,
-  distance: number,
-): Promise<number> => {
-  const zone = await getDeliveryZoneByDistance(tenantId, distance);
-
-  if (!zone) {
-    throw new HttpError(
-      400,
-      "No hay zona de delivery configurada para esa distancia.",
-    );
-  }
-
-  return zone.cost;
-};
-
 export const createDeliveryZone = async (
   payload: CreateDeliveryZoneInput,
 ): Promise<DeliveryZone> => {
@@ -101,19 +72,8 @@ export const createDeliveryZone = async (
     throw new HttpError(400, "La zona debe tener un nombre.");
   }
 
-  if (payload.minDistance === undefined || payload.minDistance < 0) {
-    throw new HttpError(400, "La distancia mínima debe ser un número válido.");
-  }
-
-  if (
-    payload.maxDistance === undefined ||
-    payload.maxDistance <= payload.minDistance
-  ) {
-    throw new HttpError(400, "La distancia máxima debe ser mayor a la mínima.");
-  }
-
-  if (payload.cost === undefined || payload.cost < 0) {
-    throw new HttpError(400, "El costo debe ser un número válido.");
+  if (payload.price === undefined || payload.price < 0) {
+    throw new HttpError(400, "El precio debe ser un número válido.");
   }
 
   const document: DeliveryZoneDocument = {
