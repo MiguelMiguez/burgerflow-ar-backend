@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from "express";
 import {
+  calculateDeliveryCost,
   createDeliveryZone,
   deleteDeliveryZone,
   getDeliveryZoneById,
@@ -63,6 +64,26 @@ export const handleGetDeliveryZone = async (
 
     const zone = await getDeliveryZoneById(tenantId, id);
     res.json(zone);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const handleCalculateDeliveryCost = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const tenantId = getTenantId(req);
+    const { zoneId } = req.query;
+
+    if (!zoneId || typeof zoneId !== "string") {
+      throw new HttpError(400, "Se requiere el id de la zona.");
+    }
+
+    const price = await calculateDeliveryCost(tenantId, zoneId);
+    res.json({ zoneId, price });
   } catch (error) {
     next(error);
   }
@@ -140,7 +161,7 @@ export const handleDeleteDeliveryZone = async (
     }
 
     await deleteDeliveryZone(tenantId, id);
-    logger.info(`Zona de delivery desactivada (${id})`);
+    logger.info(`Zona de delivery eliminada (${id})`);
     res.status(204).send();
   } catch (error) {
     next(error);

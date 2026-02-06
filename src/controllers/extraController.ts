@@ -1,143 +1,130 @@
-import { Request, Response, NextFunction } from "express";
+import { NextFunction, Request, Response } from "express";
 import {
   createExtra,
-  getExtrasByTenant,
-  getExtraById,
-  updateExtra,
   deleteExtra,
-  getActiveExtrasByTenant,
+  getExtraById,
+  listActiveExtras,
+  listExtras,
+  updateExtra,
 } from "../services/extraService";
 import { CreateExtraInput, UpdateExtraInput } from "../models/extra";
+import { HttpError } from "../utils/httpError";
+import { logger } from "../utils/logger";
 
-/**
- * POST /extras
- * Crea un nuevo extra/adicional
- */
-export const create = async (
+const getTenantId = (req: Request): string => {
+  const tenantId = req.params.tenantId || req.headers["x-tenant-id"];
+  if (!tenantId || typeof tenantId !== "string") {
+    throw new HttpError(400, "Se requiere el identificador del tenant.");
+  }
+  return tenantId;
+};
+
+export const handleListExtras = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): Promise<void> => {
   try {
-    const input: CreateExtraInput = {
+    const tenantId = getTenantId(req);
+    const { activeOnly } = req.query;
+
+    const extras =
+      activeOnly === "true"
+        ? await listActiveExtras(tenantId)
+        : await listExtras(tenantId);
+
+    res.json({ data: extras });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const handleGetExtra = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const tenantId = getTenantId(req);
+    const { id } = req.params;
+
+    if (!id) {
+      throw new HttpError(400, "Se requiere el id del extra.");
+    }
+
+    const extra = await getExtraById(tenantId, id);
+    res.json({ data: extra });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const handleCreateExtra = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const tenantId = getTenantId(req);
+    const payload: CreateExtraInput = {
       ...req.body,
-      tenantId: req.user!.tenantId,
+      tenantId,
     };
 
-    // Validaciones
-    if (!input.name || input.price === undefined) {
-      res.status(400).json({
-        error: "Nombre y precio son requeridos",
-      });
-      return;
+    if (!payload.name) {
+      throw new HttpError(400, "El extra debe tener un nombre.");
     }
 
-    if (input.stockConsumption === undefined) {
-      input.stockConsumption = 0;
+    if (payload.price === undefined || payload.price < 0) {
+      throw new HttpError(400, "El extra debe tener un precio válido.");
     }
 
-    const extra = await createExtra(input);
-
-    res.status(201).json({
-      message: "Extra creado exitosamente",
-      data: extra,
-    });
+    const extra = await createExtra(payload);
+    logger.info(`Extra creado: ${extra.name} (${extra.id})`);
+    res.status(201).json({ data: extra });
   } catch (error) {
     next(error);
   }
 };
 
-/**
- * GET /extras
- * Obtiene todos los extras del tenant
- */
-export const getAll = async (
+export const handleUpdateExtra = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = req.user!.tenantId;
-    const activeOnly = req.query.activeOnly === "true";
-
-    const extras = activeOnly
-      ? await getActiveExtrasByTenant(tenantId)
-      : await getExtrasByTenant(tenantId);
-
-    res.status(200).json({
-      data: extras,
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * GET /extras/:id
- * Obtiene un extra por ID
- */
-export const getById = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
-  try {
+    const tenantId = getTenantId(req);
     const { id } = req.params;
-    const tenantId = req.user!.tenantId;
+    const payload: UpdateExtraInput = req.body;
 
-    const extra = await getExtraById(id, tenantId);
+    if (!id) {
+      throw new HttpError(400, "Se requiere el id del extra.");
+    }
 
-    res.status(200).json({
-      data: extra,
-    });
+    const extra = await updateExtra(tenantId, id, payload);
+    logger.info(`Extra actualizado: ${extra.name} (${extra.id})`);
+    res.json({ data: extra });
   } catch (error) {
     next(error);
   }
 };
 
-/**
- * PUT /extras/:id
- * Actualiza un extra
- */
-export const update = async (
+export const handleDeleteExtra = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): Promise<void> => {
   try {
+    const tenantId = getTenantId(req);
     const { id } = req.params;
-    const tenantId = req.user!.tenantId;
-    const input: UpdateExtraInput = req.body;
 
-    const extra = await updateExtra(id, tenantId, input);
+    if (!id) {
+      throw new HttpError(400, "Se requiere el id del extra.");
+    }
 
-    res.status(200).json({
-      message: "Extra actualizado exitosamente",
-      data: extra,
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * DELETE /extras/:id
- * Desactiva un extra
- */
-export const remove = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
-  try {
-    const { id } = req.params;
-    const tenantId = req.user!.tenantId;
-
-    await deleteExtra(id, tenantId);
-
-    res.status(200).json({
-      message: "Extra desactivado exitosamente",
-    });
+    await deleteExtra(tenantId, id);
+    logger.info(`Extra eliminado: ${id}`);
+    res.status(204).send();
   } catch (error) {
     next(error);
   }

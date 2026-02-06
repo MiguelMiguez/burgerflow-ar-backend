@@ -1,69 +1,125 @@
-import { Request, Response, NextFunction } from "express";
-import { updateUserProfile, getUserByUid } from "../services/authService";
+import { NextFunction, Request, Response } from "express";
+import { getFirestore } from "../config/firebase";
+import { HttpError } from "../utils/httpError";
 import { logger } from "../utils/logger";
 
-/**
- * GET /users/me - Obtiene el perfil del usuario autenticado
- */
-export const getMe = async (
+const USERS_COLLECTION = "users";
+
+export interface User {
+  uid: string;
+  email: string;
+  displayName?: string;
+  tenantId: string;
+  role: "owner" | "admin" | "employee";
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  meta?: {
+    phoneNumberId?: string;
+    accessToken?: string;
+  };
+}
+
+export const handleGetCurrentUser = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): Promise<void> => {
   try {
-    if (!req.user?.uid) {
-      res.status(401).json({ error: "Usuario no autenticado" });
+    const firebaseUid = req.firebaseUid;
+
+    if (!firebaseUid) {
+      throw new HttpError(401, "Usuario no autenticado con Firebase.");
+    }
+
+    const db = getFirestore();
+    const userDoc = await db
+      .collection(USERS_COLLECTION)
+      .doc(firebaseUid)
+      .get();
+
+    if (!userDoc.exists) {
+      // Si el usuario no existe, lo creamos con datos básicos
+      const newUser: Omit<User, "uid"> = {
+        email: req.firebaseEmail || "",
+        tenantId: (req.headers["x-tenant-id"] as string) || "",
+        role: "admin",
+        isActive: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      await db.collection(USERS_COLLECTION).doc(firebaseUid).set(newUser);
+
+      res.json({
+        uid: firebaseUid,
+        ...newUser,
+      });
       return;
     }
 
-    logger.info(`📖 Obteniendo perfil para UID: ${req.user.uid}`);
-
-    // Obtener los datos completos del usuario de Firestore (incluye meta)
-    const user = await getUserByUid(req.user.uid);
-    
-    res.status(200).json(user);
+    const userData = userDoc.data() as Omit<User, "uid">;
+    res.json({
+      uid: firebaseUid,
+      ...userData,
+    });
   } catch (error) {
-    logger.error("Error al obtener perfil del usuario:", error);
     next(error);
   }
 };
 
-/**
- * PATCH /users/me - Actualiza el perfil del usuario autenticado
- */
-export const updateMe = async (
+export const handleUpdateCurrentUser = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): Promise<void> => {
   try {
-    if (!req.user) {
-      res.status(401).json({ error: "Usuario no autenticado" });
-      return;
+    const firebaseUid = req.firebaseUid;
+
+    if (!firebaseUid) {
+      throw new HttpError(401, "Usuario no autenticado con Firebase.");
     }
 
-    const { meta } = req.body;
-    const uid = req.user.uid;
+    const { meta, displayName } = req.body;
 
-    logger.info(`📝 Actualizando perfil para UID: ${uid}`);
+    const db = getFirestore();
+    const userRef = db.collection(USERS_COLLECTION).doc(firebaseUid);
+    const userDoc = await userRef.get();
 
-    const updatedUser = await updateUserProfile(uid, {
-      meta: meta
-        ? {
-            phoneNumberId: meta.phoneNumberId || undefined,
-            accessToken: meta.accessToken || undefined,
-          }
-        : undefined,
-    });
+    const updateData: Partial<User> = {
+      updatedAt: new Date().toISOString(),
+    };
 
-    logger.info(`✅ Perfil actualizado: ${uid}`);
+    if (displayName !== undefined) {
+      updateData.displayName = displayName;
+    }
 
-    res.status(200).json({
-      message: "Perfil actualizado exitosamente",
-      data: updatedUser,
+    if (meta) {
+      updateData.meta = meta;
+    }
+
+    if (userDoc.exists) {
+      await userRef.update(updateData);
+    } else {
+      // Crear el usuario si no existe
+      await userRef.set({
+        email: req.firebaseEmail || "",
+        tenantId: (req.headers["x-tenant-id"] as string) || "",
+        role: "admin",
+        isActive: true,
+        createdAt: new Date().toISOString(),
+        ...updateData,
+      });
+    }
+
+    const updatedUser = await userRef.get();
+    logger.info(`Usuario actualizado: ${firebaseUid}`);
+
+    res.json({
+      uid: firebaseUid,
+      ...(updatedUser.data() as Omit<User, "uid">),
     });
   } catch (error) {
-    logger.error("Error al actualizar perfil del usuario:", error);
     next(error);
   }
 };

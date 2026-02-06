@@ -22,7 +22,7 @@ router.post("/", authorize("admin"), handleCreateDeliveryZone);
 // Actualizar zona
 router.put("/:id", authorize("admin"), handleUpdateDeliveryZone);
 
-// Eliminar zona (soft delete)
+// Eliminar zona
 router.delete("/:id", authorize("admin"), handleDeleteDeliveryZone);
 
 export default router;

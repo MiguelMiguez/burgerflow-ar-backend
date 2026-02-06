@@ -13,8 +13,12 @@ import {
 } from "../models/order";
 import { bulkUpdateStock } from "./ingredientService";
 import { getProductById } from "./productService";
-import { sendOrderStatusNotification } from "./notificationService";
+import {
+  sendOrderStatusNotification,
+  sendNewOrderNotification,
+} from "./notificationService";
 import { HttpError } from "../utils/httpError";
+import { logger } from "../utils/logger";
 import { listTenants } from "./tenantService";
 
 const ORDERS_COLLECTION = "orders";
@@ -150,6 +154,147 @@ export const getPendingOrdersByDate = async (
     .filter((order) => !finalStatuses.includes(order.status));
 };
 
+// Listar pedidos por repartidor en una fecha específica
+export const listOrdersByDeliveryId = async (
+  tenantId: string,
+  deliveryId: string,
+  date: string,
+): Promise<Order[]> => {
+  const startOfDay = new Date(`${date}T00:00:00.000Z`).toISOString();
+  const endOfDay = new Date(`${date}T23:59:59.999Z`).toISOString();
+
+  const snapshot = await getCollection(tenantId)
+    .where("deliveryId", "==", deliveryId)
+    .where("createdAt", ">=", startOfDay)
+    .where("createdAt", "<=", endOfDay)
+    .orderBy("createdAt", "desc")
+    .get();
+
+  return snapshot.docs.map(mapSnapshotToOrder);
+};
+
+// Estadísticas de rendición por repartidor
+export interface DeliverySettlement {
+  deliveryId: string;
+  totalOrders: number;
+  deliveredOrders: number;
+  cashOrders: number;
+  totalCash: number; // Total a rendir (efectivo de pedidos entregados)
+  totalDeliveryCost: number; // Total en costos de envío
+  orders: Order[];
+}
+
+export const getDeliverySettlement = async (
+  tenantId: string,
+  deliveryId: string,
+  date: string,
+): Promise<DeliverySettlement> => {
+  const orders = await listOrdersByDeliveryId(tenantId, deliveryId, date);
+
+  const deliveredOrders = orders.filter((o) => o.status === "entregado");
+  const cashDeliveredOrders = deliveredOrders.filter(
+    (o) => o.paymentMethod === "efectivo",
+  );
+
+  const totalCash = cashDeliveredOrders.reduce((sum, o) => sum + o.total, 0);
+  const totalDeliveryCost = deliveredOrders.reduce(
+    (sum, o) => sum + (o.deliveryCost ?? 0),
+    0,
+  );
+
+  return {
+    deliveryId,
+    totalOrders: orders.length,
+    deliveredOrders: deliveredOrders.length,
+    cashOrders: cashDeliveredOrders.length,
+    totalCash,
+    totalDeliveryCost,
+    orders: deliveredOrders,
+  };
+};
+
+// Obtener rendiciones de todos los repartidores para una fecha
+export const getAllDeliverySettlements = async (
+  tenantId: string,
+  date: string,
+): Promise<DeliverySettlement[]> => {
+  // Usar hora local de Argentina (UTC-3)
+  const startOfDay = new Date(`${date}T00:00:00.000-03:00`);
+  const endOfDay = new Date(`${date}T23:59:59.999-03:00`);
+
+  // Obtener todos los pedidos (sin filtros compuestos para evitar índice)
+  const snapshot = await getCollection(tenantId).get();
+
+  console.log(
+    `[Settlements] Total pedidos en colección: ${snapshot.docs.length}`,
+  );
+
+  // Filtrar por tipo delivery y fecha en memoria
+  const orders = snapshot.docs
+    .map(mapSnapshotToOrder)
+    .filter((order) => {
+      if (order.orderType !== "delivery") return false;
+      const orderDate = new Date(order.createdAt);
+      const inRange = orderDate >= startOfDay && orderDate <= endOfDay;
+      if (order.deliveryId) {
+        console.log(
+          `[Settlements] Pedido ${order.id} - fecha: ${order.createdAt}, deliveryId: ${order.deliveryId}, inRange: ${inRange}`,
+        );
+      }
+      return inRange;
+    })
+    .sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+
+  console.log(`[Settlements] Pedidos delivery del día: ${orders.length}`);
+  console.log(
+    `[Settlements] Pedidos con deliveryId: ${orders.filter((o) => o.deliveryId).length}`,
+  );
+
+  // Agrupar por deliveryId
+  const settlementsByDeliveryId = new Map<string, Order[]>();
+
+  for (const order of orders) {
+    if (order.deliveryId) {
+      const existing = settlementsByDeliveryId.get(order.deliveryId) ?? [];
+      existing.push(order);
+      settlementsByDeliveryId.set(order.deliveryId, existing);
+    }
+  }
+
+  // Calcular settlement para cada repartidor
+  const settlements: DeliverySettlement[] = [];
+
+  for (const [deliveryId, deliveryOrders] of settlementsByDeliveryId) {
+    const deliveredOrders = deliveryOrders.filter(
+      (o) => o.status === "entregado",
+    );
+    const cashDeliveredOrders = deliveredOrders.filter(
+      (o) => o.paymentMethod === "efectivo",
+    );
+
+    const totalCash = cashDeliveredOrders.reduce((sum, o) => sum + o.total, 0);
+    const totalDeliveryCost = deliveredOrders.reduce(
+      (sum, o) => sum + (o.deliveryCost ?? 0),
+      0,
+    );
+
+    settlements.push({
+      deliveryId,
+      totalOrders: deliveryOrders.length,
+      deliveredOrders: deliveredOrders.length,
+      cashOrders: cashDeliveredOrders.length,
+      totalCash,
+      totalDeliveryCost,
+      orders: deliveredOrders,
+    });
+  }
+
+  return settlements;
+};
+
 export const getOrderById = async (
   tenantId: string,
   id: string,
@@ -207,10 +352,19 @@ export const createOrder = async (
 
   const docRef = await getCollection(payload.tenantId).add(document);
 
-  return {
+  const createdOrder: Order = {
     id: docRef.id,
     ...document,
   };
+
+  // Enviar notificación de nuevo pedido al admin (no bloqueante)
+  sendNewOrderNotification(createdOrder).catch((error) => {
+    logger.warn(
+      `Error al enviar notificación de nuevo pedido: ${error instanceof Error ? error.message : "Error desconocido"}`,
+    );
+  });
+
+  return createdOrder;
 };
 
 export const updateOrder = async (
@@ -340,7 +494,58 @@ export const cancelOrder = async (
     );
   }
 
-  // TODO: Si el pedido ya estaba confirmado, devolver stock
+  // Si el pedido estaba confirmado, devolver stock
+  if (order.status === "confirmado") {
+    const stockUpdates: Array<{ ingredientId: string; quantity: number }> = [];
+
+    for (const item of order.items) {
+      const product = await getProductById(tenantId, item.productId);
+
+      for (const ingredient of product.ingredients) {
+        const existingUpdate = stockUpdates.find(
+          (u) => u.ingredientId === ingredient.ingredientId,
+        );
+        const totalQuantity = ingredient.quantity * item.quantity;
+
+        if (existingUpdate) {
+          existingUpdate.quantity += totalQuantity;
+        } else {
+          stockUpdates.push({
+            ingredientId: ingredient.ingredientId,
+            quantity: totalQuantity,
+          });
+        }
+      }
+
+      // Procesar personalizaciones (extras que se agregaron)
+      for (const customization of item.customizations) {
+        if (customization.type === "agregar") {
+          const existingUpdate = stockUpdates.find(
+            (u) => u.ingredientId === customization.ingredientId,
+          );
+          if (existingUpdate) {
+            existingUpdate.quantity += item.quantity;
+          } else {
+            stockUpdates.push({
+              ingredientId: customization.ingredientId,
+              quantity: item.quantity,
+            });
+          }
+        }
+      }
+    }
+
+    // Devolver stock
+    if (stockUpdates.length > 0) {
+      await bulkUpdateStock(
+        tenantId,
+        stockUpdates,
+        "entrada",
+        `Cancelación pedido #${id}`,
+        id,
+      );
+    }
+  }
 
   return updateOrder(tenantId, id, { status: "cancelado" });
 };

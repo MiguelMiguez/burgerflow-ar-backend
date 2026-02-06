@@ -196,7 +196,7 @@ export const getLowStockIngredients = async (
 export const bulkUpdateStock = async (
   tenantId: string,
   updates: Array<{ ingredientId: string; quantity: number }>,
-  type: "salida",
+  type: "salida" | "entrada",
   reason: string,
   orderId?: string,
 ): Promise<void> => {
@@ -212,7 +212,10 @@ export const bulkUpdateStock = async (
     }
 
     const currentData = doc.data() as IngredientDocument;
-    const newStock = currentData.stock - update.quantity;
+    const newStock =
+      type === "salida"
+        ? currentData.stock - update.quantity
+        : currentData.stock + update.quantity;
 
     if (newStock < 0) {
       throw new HttpError(400, `Stock insuficiente de ${currentData.name}.`);

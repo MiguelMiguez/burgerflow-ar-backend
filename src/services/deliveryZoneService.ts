@@ -65,6 +65,24 @@ export const getDeliveryZoneById = async (
   };
 };
 
+export const getDeliveryZoneByName = async (
+  tenantId: string,
+  name: string,
+): Promise<DeliveryZone | null> => {
+  const zones = await listActiveDeliveryZones(tenantId);
+  return (
+    zones.find((zone) => zone.name.toLowerCase() === name.toLowerCase()) || null
+  );
+};
+
+export const calculateDeliveryCost = async (
+  tenantId: string,
+  zoneId: string,
+): Promise<number> => {
+  const zone = await getDeliveryZoneById(tenantId, zoneId);
+  return zone.price;
+};
+
 export const createDeliveryZone = async (
   payload: CreateDeliveryZoneInput,
 ): Promise<DeliveryZone> => {
@@ -126,5 +144,5 @@ export const deleteDeliveryZone = async (
     throw new HttpError(404, "La zona de delivery solicitada no existe.");
   }
 
-  await docRef.update({ isActive: false });
+  await docRef.delete();
 };
