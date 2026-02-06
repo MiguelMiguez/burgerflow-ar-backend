@@ -4,6 +4,9 @@ export interface CreateTenantInput {
   phone?: string;
   logo?: string;
   whatsappNumber?: string;
+  notificationPhone?: string; // Teléfono para notificaciones de pedidos nuevos
+  hasPickup?: boolean;
+  hasDelivery?: boolean;
   // Meta WhatsApp Business API credentials
   metaPhoneNumberId?: string;
   metaAccessToken?: string;
@@ -15,6 +18,9 @@ export interface UpdateTenantInput {
   phone?: string;
   logo?: string;
   whatsappNumber?: string;
+  notificationPhone?: string;
+  hasPickup?: boolean;
+  hasDelivery?: boolean;
   isActive?: boolean;
   // Meta WhatsApp Business API credentials
   metaPhoneNumberId?: string;

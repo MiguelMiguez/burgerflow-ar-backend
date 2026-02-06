@@ -5,23 +5,28 @@ import {
   listAvailableProducts,
   getProductById,
 } from "../services/productService";
+import { listActiveDeliveryZones } from "../services/deliveryZoneService";
+import { listActiveExtras } from "../services/extraService";
+import { getIngredientById } from "../services/ingredientService";
 import type { Tenant } from "../models/tenant";
 import type { Product } from "../models/product";
+import type { DeliveryZone } from "../models/deliveryZone";
+import type { Extra } from "../models/extra";
 import type {
   OrderItem,
   OrderCustomization,
+  OrderExtra,
   CreateOrderInput,
 } from "../models/order";
 import { isHttpError } from "../utils/httpError";
 
 /**
- * Bot de Pedidos de Hamburguesas refactorizado para Meta WhatsApp Business API
- * Este bot permite a los clientes:
- * - Ver el menú de productos
- * - Agregar productos al carrito
- * - Personalizar ingredientes
- * - Seleccionar delivery o retiro
- * - Confirmar pedidos
+ * Bot de Pedidos de Hamburguesas para Meta WhatsApp Business API
+ * Incluye:
+ * - Selección de extras para productos
+ * - Selección de zona de delivery con costos
+ * - Referencias obligatorias para delivery
+ * - Verificación de stock en tiempo real
  */
 
 const HELP_MESSAGE = [
@@ -40,18 +45,27 @@ type ConversationStep =
   | "idle"
   | "selectingProduct"
   | "selectingQuantity"
+  | "selectingExtras"
   | "askingCustomization"
   | "selectingCustomization"
   | "askingMoreProducts"
   | "selectingOrderType"
+  | "selectingDeliveryZone"
   | "awaitingAddress"
+  | "awaitingDeliveryNotes"
   | "selectingPayment"
   | "confirmingOrder";
+
+interface SelectedExtra {
+  extra: Extra;
+  quantity: number;
+}
 
 interface CartItem {
   product: Product;
   quantity: number;
   customizations: OrderCustomization[];
+  extras: SelectedExtra[];
   notes?: string;
 }
 
@@ -61,8 +75,11 @@ interface ConversationState {
   cart: CartItem[];
   currentProduct?: Product;
   currentQuantity?: number;
+  availableExtras?: Extra[];
   orderType?: "delivery" | "pickup";
+  selectedZone?: DeliveryZone;
   deliveryAddress?: string;
+  deliveryNotes?: string;
   paymentMethod?: "efectivo" | "transferencia";
   customerName?: string;
 }
@@ -116,28 +133,53 @@ const formatProducts = (products: Product[]): string => {
   return `🍔 *Nuestro Menú*\n\n${items.join("\n\n")}\n\nEscribe el *número* del producto que deseas o *pedir* para comenzar.`;
 };
 
-const formatCart = (cart: CartItem[]): string => {
+const formatCart = (cart: CartItem[], deliveryCost: number = 0): string => {
   if (cart.length === 0) {
     return "Tu carrito está vacío.";
   }
 
-  let total = 0;
+  let subtotal = 0;
   const items = cart.map((item, index) => {
-    const itemTotal = item.product.price * item.quantity;
-    total += itemTotal;
+    let itemTotal = item.product.price * item.quantity;
 
-    let customizationText = "";
+    // Sumar extras
+    const extrasTotal = item.extras.reduce(
+      (sum, e) => sum + e.extra.price * e.quantity * item.quantity,
+      0,
+    );
+    itemTotal += extrasTotal;
+
+    // Sumar customizaciones con precio extra
+    const customizationsTotal = item.customizations
+      .filter((c) => c.type === "agregar")
+      .reduce((sum, c) => sum + c.extraPrice * item.quantity, 0);
+    itemTotal += customizationsTotal;
+
+    subtotal += itemTotal;
+
+    let details = "";
     if (item.customizations.length > 0) {
       const mods = item.customizations.map(
         (c) => `${c.type === "agregar" ? "+" : "-"} ${c.ingredientName}`,
       );
-      customizationText = `\n   _${mods.join(", ")}_`;
+      details += `\n   _${mods.join(", ")}_`;
+    }
+    if (item.extras.length > 0) {
+      const extrasList = item.extras.map(
+        (e) => `+ ${e.quantity}x ${e.extra.name}`,
+      );
+      details += `\n   _${extrasList.join(", ")}_`;
     }
 
-    return `${index + 1}. ${item.quantity}x ${item.product.name} - ${formatPrice(itemTotal)}${customizationText}`;
+    return `${index + 1}. ${item.quantity}x ${item.product.name} - ${formatPrice(itemTotal)}${details}`;
   });
 
-  return `🛒 *Tu Pedido*\n\n${items.join("\n")}\n\n*Total: ${formatPrice(total)}*`;
+  const total = subtotal + deliveryCost;
+  let result = `🛒 *Tu Pedido*\n\n${items.join("\n")}\n\n*Subtotal: ${formatPrice(subtotal)}*`;
+  if (deliveryCost > 0) {
+    result += `\n*Envío: ${formatPrice(deliveryCost)}*\n*Total: ${formatPrice(total)}*`;
+  }
+  return result;
 };
 
 const startOrderFlow = async (
@@ -253,24 +295,136 @@ const handleQuantitySelection = async (
     return;
   }
 
+  // Crear item del carrito
   const cartItem: CartItem = {
     product: state.currentProduct,
     quantity,
     customizations: [],
+    extras: [],
   };
 
   const updatedCart = [...state.cart, cartItem];
 
+  // Verificar si hay extras disponibles
+  try {
+    const extras = await listActiveExtras(state.tenantId);
+
+    if (extras.length > 0) {
+      // Hay extras, preguntar si quiere agregar
+      setConversationState(phoneNumber, {
+        ...state,
+        step: "selectingExtras",
+        cart: updatedCart,
+        currentQuantity: quantity,
+        availableExtras: extras,
+      });
+
+      const extrasList = extras.map(
+        (extra, index) =>
+          `*${index + 1}.* ${extra.name} - ${formatPrice(extra.price)}`,
+      );
+
+      await sendMessage(
+        phoneNumber,
+        `Agregaste ${quantity}x *${state.currentProduct.name}* al carrito.\n\n` +
+          `🍟 *¿Deseas agregar extras?*\n\n${extrasList.join("\n")}\n\n` +
+          `Escribe el *número* del extra o *no* para continuar sin extras.`,
+        tenant,
+      );
+    } else {
+      // No hay extras, ir a personalización
+      setConversationState(phoneNumber, {
+        ...state,
+        step: "askingCustomization",
+        cart: updatedCart,
+        currentQuantity: quantity,
+      });
+
+      await sendMessage(
+        phoneNumber,
+        `Agregaste ${quantity}x *${state.currentProduct.name}* al carrito.\n\n¿Deseas personalizar este producto? (quitar/agregar ingredientes)\n\nResponde *si* o *no*.`,
+        tenant,
+      );
+    }
+  } catch (error) {
+    logger.error("Error al obtener extras", error);
+    // Continuar sin extras
+    setConversationState(phoneNumber, {
+      ...state,
+      step: "askingCustomization",
+      cart: updatedCart,
+      currentQuantity: quantity,
+    });
+
+    await sendMessage(
+      phoneNumber,
+      `Agregaste ${quantity}x *${state.currentProduct.name}* al carrito.\n\n¿Deseas personalizar este producto? (quitar/agregar ingredientes)\n\nResponde *si* o *no*.`,
+      tenant,
+    );
+  }
+};
+
+const handleExtrasSelection = async (
+  phoneNumber: string,
+  text: string,
+  state: ConversationState,
+  tenant: Tenant,
+): Promise<void> => {
+  const normalized = text.trim().toLowerCase();
+
+  // Si dice "no" o "listo", continuar al siguiente paso
+  if (normalized === "no" || normalized === "listo") {
+    setConversationState(phoneNumber, {
+      ...state,
+      step: "askingCustomization",
+      availableExtras: undefined,
+    });
+
+    await sendMessage(
+      phoneNumber,
+      `¿Deseas personalizar el producto? (quitar/agregar ingredientes)\n\nResponde *si* o *no*.`,
+      tenant,
+    );
+    return;
+  }
+
+  const extraIndex = parseInt(text, 10) - 1;
+  const extras = state.availableExtras || [];
+
+  if (isNaN(extraIndex) || extraIndex < 0 || extraIndex >= extras.length) {
+    await sendMessage(
+      phoneNumber,
+      `Escribe un número válido (1-${extras.length}), *no* para continuar sin extras, o *listo* si terminaste.`,
+      tenant,
+    );
+    return;
+  }
+
+  const selectedExtra = extras[extraIndex];
+
+  // Agregar extra al último item del carrito
+  const updatedCart = [...state.cart];
+  const lastItem = updatedCart[updatedCart.length - 1];
+  if (lastItem) {
+    const existingExtra = lastItem.extras.find(
+      (e) => e.extra.id === selectedExtra.id,
+    );
+    if (existingExtra) {
+      existingExtra.quantity += 1;
+    } else {
+      lastItem.extras.push({ extra: selectedExtra, quantity: 1 });
+    }
+  }
+
   setConversationState(phoneNumber, {
     ...state,
-    step: "askingCustomization",
     cart: updatedCart,
-    currentQuantity: quantity,
   });
 
   await sendMessage(
     phoneNumber,
-    `Agregaste ${quantity}x *${state.currentProduct.name}* al carrito.\n\n¿Deseas personalizar este producto? (quitar/agregar ingredientes)\n\nResponde *si* o *no*.`,
+    `✅ Agregaste *${selectedExtra.name}* (+${formatPrice(selectedExtra.price)})\n\n` +
+      `Escribe otro número para más extras o *listo* para continuar.`,
     tenant,
   );
 };
@@ -397,6 +551,7 @@ const askForMoreProducts = async (
     step: "askingMoreProducts",
     currentProduct: undefined,
     currentQuantity: undefined,
+    availableExtras: undefined,
   });
 
   await sendMessage(phoneNumber, formatCart(state.cart), tenant);
@@ -418,14 +573,88 @@ const handleMoreProductsQuestion = async (
   if (normalized === "si" || normalized === "sí") {
     await startOrderFlow(phoneNumber, tenant);
   } else {
+    // Verificar si el tenant tiene delivery y/o pickup habilitados
+    const hasDelivery = tenant.hasDelivery !== false;
+    const hasPickup = tenant.hasPickup !== false;
+
+    if (hasDelivery && hasPickup) {
+      setConversationState(phoneNumber, {
+        ...state,
+        step: "selectingOrderType",
+      });
+
+      await sendMessage(
+        phoneNumber,
+        "¿Cómo deseas recibir tu pedido?\n\n*1.* 🚗 Delivery (envío a domicilio)\n*2.* 🏪 Retiro en local",
+        tenant,
+      );
+    } else if (hasDelivery) {
+      await handleDeliveryFlow(phoneNumber, state, tenant);
+    } else {
+      setConversationState(phoneNumber, {
+        ...state,
+        step: "selectingPayment",
+        orderType: "pickup",
+      });
+
+      await sendMessage(
+        phoneNumber,
+        "Perfecto, retiro en local.\n\n¿Cómo deseas pagar?\n\n*1.* Efectivo\n*2.* Transferencia",
+        tenant,
+      );
+    }
+  }
+};
+
+const handleDeliveryFlow = async (
+  phoneNumber: string,
+  state: ConversationState,
+  tenant: Tenant,
+): Promise<void> => {
+  try {
+    const zones = await listActiveDeliveryZones(state.tenantId);
+
+    if (zones.length > 0) {
+      setConversationState(phoneNumber, {
+        ...state,
+        step: "selectingDeliveryZone",
+        orderType: "delivery",
+      });
+
+      const zonesList = zones.map(
+        (zone, index) =>
+          `*${index + 1}.* ${zone.name} - ${formatPrice(zone.price)}`,
+      );
+
+      await sendMessage(
+        phoneNumber,
+        `🚗 *Seleccioná tu zona de delivery:*\n\n${zonesList.join("\n")}\n\nEscribe el *número* de tu zona.`,
+        tenant,
+      );
+    } else {
+      setConversationState(phoneNumber, {
+        ...state,
+        step: "awaitingAddress",
+        orderType: "delivery",
+      });
+
+      await sendMessage(
+        phoneNumber,
+        "Por favor, escribe tu *dirección completa* para el envío.\n\n_(Calle, número, piso/depto, barrio/localidad)_",
+        tenant,
+      );
+    }
+  } catch (error) {
+    logger.error("Error al obtener zonas de delivery", error);
     setConversationState(phoneNumber, {
       ...state,
-      step: "selectingOrderType",
+      step: "awaitingAddress",
+      orderType: "delivery",
     });
 
     await sendMessage(
       phoneNumber,
-      "¿Cómo deseas recibir tu pedido?\n\n*1.* Delivery (envío a domicilio)\n*2.* Retiro en local",
+      "Por favor, escribe tu *dirección completa* para el envío.\n\n_(Calle, número, piso/depto, barrio/localidad)_",
       tenant,
     );
   }
@@ -444,17 +673,7 @@ const handleOrderTypeSelection = async (
     normalized.includes("delivery") ||
     normalized.includes("envio")
   ) {
-    setConversationState(phoneNumber, {
-      ...state,
-      step: "awaitingAddress",
-      orderType: "delivery",
-    });
-
-    await sendMessage(
-      phoneNumber,
-      "Por favor, escribe tu *dirección completa* para el envío.\n\n_(Calle, número, piso/depto, barrio/localidad)_",
-      tenant,
-    );
+    await handleDeliveryFlow(phoneNumber, state, tenant);
   } else if (
     normalized === "2" ||
     normalized.includes("retiro") ||
@@ -480,6 +699,49 @@ const handleOrderTypeSelection = async (
   }
 };
 
+const handleDeliveryZoneSelection = async (
+  phoneNumber: string,
+  text: string,
+  state: ConversationState,
+  tenant: Tenant,
+): Promise<void> => {
+  const zoneIndex = parseInt(text, 10) - 1;
+
+  try {
+    const zones = await listActiveDeliveryZones(state.tenantId);
+
+    if (isNaN(zoneIndex) || zoneIndex < 0 || zoneIndex >= zones.length) {
+      await sendMessage(
+        phoneNumber,
+        `Por favor, escribe un número válido entre 1 y ${zones.length}.`,
+        tenant,
+      );
+      return;
+    }
+
+    const selectedZone = zones[zoneIndex];
+
+    setConversationState(phoneNumber, {
+      ...state,
+      step: "awaitingAddress",
+      selectedZone,
+    });
+
+    await sendMessage(
+      phoneNumber,
+      `Zona seleccionada: *${selectedZone.name}* (Envío: ${formatPrice(selectedZone.price)})\n\nPor favor, escribe tu *dirección completa*.\n\n_(Calle, número, piso/depto)_`,
+      tenant,
+    );
+  } catch (error) {
+    logger.error("Error al seleccionar zona", error);
+    await sendMessage(
+      phoneNumber,
+      "Hubo un error. Intenta nuevamente.",
+      tenant,
+    );
+  }
+};
+
 const handleAddressInput = async (
   phoneNumber: string,
   text: string,
@@ -497,17 +759,52 @@ const handleAddressInput = async (
     return;
   }
 
-  const deliveryCost = 500; // Placeholder - TODO: calcular según zona
-
+  // Pedir referencias obligatorias
   setConversationState(phoneNumber, {
     ...state,
-    step: "selectingPayment",
+    step: "awaitingDeliveryNotes",
     deliveryAddress: address,
   });
 
   await sendMessage(
     phoneNumber,
-    `Dirección registrada: *${address}*\nCosto de envío: ${formatPrice(deliveryCost)}\n\n¿Cómo deseas pagar?\n\n*1.* Efectivo\n*2.* Transferencia`,
+    `📍 Dirección registrada: *${address}*\n\n` +
+      `Por favor, escribe una *referencia* para encontrar tu ubicación más fácil.\n\n` +
+      `_Ejemplo: Casa con portón negro, al lado de la farmacia, timbre no funciona, etc._`,
+    tenant,
+  );
+};
+
+const handleDeliveryNotesInput = async (
+  phoneNumber: string,
+  text: string,
+  state: ConversationState,
+  tenant: Tenant,
+): Promise<void> => {
+  const notes = text.trim();
+
+  if (notes.length < 5) {
+    await sendMessage(
+      phoneNumber,
+      "Por favor, escribe una referencia más detallada para ayudar al repartidor.",
+      tenant,
+    );
+    return;
+  }
+
+  const deliveryCost = state.selectedZone?.price ?? 500;
+
+  setConversationState(phoneNumber, {
+    ...state,
+    step: "selectingPayment",
+    deliveryNotes: notes,
+  });
+
+  await sendMessage(
+    phoneNumber,
+    `✅ Referencia guardada: _${notes}_\n\n` +
+      `Costo de envío: ${formatPrice(deliveryCost)}\n\n` +
+      `¿Cómo deseas pagar?\n\n*1.* 💵 Efectivo\n*2.* 💳 Transferencia`,
     tenant,
   );
 };
@@ -536,6 +833,19 @@ const handlePaymentSelection = async (
     return;
   }
 
+  // Verificar stock antes de mostrar resumen
+  const stockCheck = await verifyStock(state, tenant);
+  if (!stockCheck.ok) {
+    await sendMessage(
+      phoneNumber,
+      `⚠️ *Lo sentimos*, no hay suficiente stock:\n\n${stockCheck.message}\n\n` +
+        `Por favor, modifica tu pedido. Escribe *pedir* para comenzar de nuevo.`,
+      tenant,
+    );
+    resetConversation(phoneNumber);
+    return;
+  }
+
   setConversationState(phoneNumber, {
     ...state,
     step: "confirmingOrder",
@@ -543,31 +853,134 @@ const handlePaymentSelection = async (
     customerName: customerName || CUSTOMER_FALLBACK_NAME,
   });
 
-  const subtotal = state.cart.reduce(
-    (sum, item) => sum + item.product.price * item.quantity,
-    0,
-  );
-  const deliveryCost = state.orderType === "delivery" ? 500 : 0;
+  const subtotal = calculateSubtotal(state.cart);
+  const deliveryCost =
+    state.orderType === "delivery" ? (state.selectedZone?.price ?? 500) : 0;
   const total = subtotal + deliveryCost;
 
   const paymentText =
     paymentMethod === "efectivo" ? "💵 Efectivo" : "💳 Transferencia";
-  const orderTypeText =
-    state.orderType === "delivery"
-      ? `🚗 Delivery a: ${state.deliveryAddress}`
-      : "🏪 Retiro en local";
+
+  let orderTypeText = "🏪 Retiro en local";
+  if (state.orderType === "delivery") {
+    orderTypeText = `🚗 Delivery a: ${state.deliveryAddress}`;
+    if (state.selectedZone) {
+      orderTypeText += `\n📍 Zona: ${state.selectedZone.name}`;
+    }
+    if (state.deliveryNotes) {
+      orderTypeText += `\n📝 Referencia: ${state.deliveryNotes}`;
+    }
+  }
 
   await sendMessage(
     phoneNumber,
     `📋 *Resumen de tu pedido*\n\n` +
-      `${formatCart(state.cart)}\n\n` +
+      `${formatCart(state.cart, deliveryCost)}\n\n` +
       `${orderTypeText}\n` +
-      `${state.orderType === "delivery" ? `Envío: ${formatPrice(deliveryCost)}\n` : ""}` +
       `Pago: ${paymentText}\n\n` +
       `*TOTAL: ${formatPrice(total)}*\n\n` +
       `¿Confirmamos el pedido?\n\nResponde *confirmar* o *cancelar*.`,
     tenant,
   );
+};
+
+const calculateSubtotal = (cart: CartItem[]): number => {
+  return cart.reduce((sum, item) => {
+    let itemTotal = item.product.price * item.quantity;
+
+    const extrasTotal = item.extras.reduce(
+      (eSum, e) => eSum + e.extra.price * e.quantity * item.quantity,
+      0,
+    );
+    itemTotal += extrasTotal;
+
+    const customizationsTotal = item.customizations
+      .filter((c) => c.type === "agregar")
+      .reduce((cSum, c) => cSum + c.extraPrice * item.quantity, 0);
+    itemTotal += customizationsTotal;
+
+    return sum + itemTotal;
+  }, 0);
+};
+
+interface StockCheckResult {
+  ok: boolean;
+  message: string;
+}
+
+const verifyStock = async (
+  state: ConversationState,
+  _tenant: Tenant,
+): Promise<StockCheckResult> => {
+  try {
+    const productService = await import("../services/productService");
+    const ingredientService = await import("../services/ingredientService");
+
+    const issues: string[] = [];
+
+    for (const item of state.cart) {
+      const product = await productService.getProductById(
+        state.tenantId,
+        item.product.id,
+      );
+
+      for (const productIng of product.ingredients) {
+        try {
+          const ingredient = await ingredientService.getIngredientById(
+            state.tenantId,
+            productIng.ingredientId,
+          );
+
+          const requiredQty = productIng.quantity * item.quantity;
+
+          if (ingredient.stock < requiredQty) {
+            issues.push(
+              `- ${product.name}: falta ${productIng.ingredientName} (${ingredient.stock} disponibles, necesitamos ${requiredQty})`,
+            );
+          }
+        } catch {
+          // Ingrediente no encontrado, continuar
+        }
+      }
+
+      // Verificar stock de extras si tienen linkedProductId
+      for (const extraItem of item.extras) {
+        if (extraItem.extra.linkedProductId) {
+          try {
+            const linkedIngredient = await ingredientService.getIngredientById(
+              state.tenantId,
+              extraItem.extra.linkedProductId,
+            );
+
+            const requiredQty =
+              extraItem.extra.stockConsumption *
+              extraItem.quantity *
+              item.quantity;
+
+            if (linkedIngredient.stock < requiredQty) {
+              issues.push(
+                `- Extra ${extraItem.extra.name}: stock insuficiente (${linkedIngredient.stock} disponibles)`,
+              );
+            }
+          } catch {
+            // Ingrediente vinculado no encontrado, continuar
+          }
+        }
+      }
+    }
+
+    if (issues.length > 0) {
+      return {
+        ok: false,
+        message: issues.join("\n"),
+      };
+    }
+
+    return { ok: true, message: "" };
+  } catch (error) {
+    logger.error("Error al verificar stock", error);
+    return { ok: true, message: "" };
+  }
 };
 
 const handleOrderConfirmation = async (
@@ -597,14 +1010,43 @@ const handleOrderConfirmation = async (
     return;
   }
 
+  // Verificar stock una vez más antes de confirmar
+  const stockCheck = await verifyStock(state, tenant);
+  if (!stockCheck.ok) {
+    await sendMessage(
+      phoneNumber,
+      `⚠️ *Lo sentimos*, el stock cambió mientras procesábamos tu pedido:\n\n${stockCheck.message}\n\n` +
+        `Por favor, intenta de nuevo. Escribe *pedir* para comenzar.`,
+      tenant,
+    );
+    resetConversation(phoneNumber);
+    return;
+  }
+
   try {
     const items: OrderItem[] = state.cart.map((cartItem) => {
-      const extrasTotal = cartItem.customizations
+      let unitPrice = cartItem.product.price;
+
+      const extrasTotal = cartItem.extras.reduce(
+        (sum, e) => sum + e.extra.price * e.quantity,
+        0,
+      );
+      unitPrice += extrasTotal;
+
+      const customizationsTotal = cartItem.customizations
         .filter((c) => c.type === "agregar")
         .reduce((sum, c) => sum + c.extraPrice, 0);
+      unitPrice += customizationsTotal;
 
-      const unitPrice = cartItem.product.price + extrasTotal;
       const itemTotal = unitPrice * cartItem.quantity;
+
+      const orderExtras: OrderExtra[] = cartItem.extras.map((e) => ({
+        extraId: e.extra.id,
+        extraName: e.extra.name,
+        quantity: e.quantity,
+        unitPrice: e.extra.price,
+        totalPrice: e.extra.price * e.quantity,
+      }));
 
       const item: OrderItem = {
         productId: cartItem.product.id,
@@ -612,6 +1054,7 @@ const handleOrderConfirmation = async (
         quantity: cartItem.quantity,
         unitPrice,
         customizations: cartItem.customizations,
+        extras: orderExtras.length > 0 ? orderExtras : undefined,
         itemTotal,
       };
 
@@ -622,7 +1065,8 @@ const handleOrderConfirmation = async (
       return item;
     });
 
-    const deliveryCost = state.orderType === "delivery" ? 500 : 0;
+    const deliveryCost =
+      state.orderType === "delivery" ? (state.selectedZone?.price ?? 500) : 0;
 
     const orderInput: CreateOrderInput = {
       tenantId: state.tenantId,
@@ -635,8 +1079,17 @@ const handleOrderConfirmation = async (
       paymentMethod: state.paymentMethod || "efectivo",
     };
 
-    if (state.orderType === "delivery" && state.deliveryAddress) {
-      orderInput.deliveryAddress = state.deliveryAddress;
+    if (state.orderType === "delivery") {
+      if (state.deliveryAddress) {
+        orderInput.deliveryAddress = state.deliveryAddress;
+      }
+      if (state.selectedZone) {
+        orderInput.deliveryZoneId = state.selectedZone.id;
+        orderInput.deliveryZoneName = state.selectedZone.name;
+      }
+      if (state.deliveryNotes) {
+        orderInput.deliveryNotes = state.deliveryNotes;
+      }
     }
 
     const order = await createOrder(orderInput);
@@ -677,7 +1130,6 @@ const handleOrderConfirmation = async (
 
 /**
  * Punto de entrada principal del bot
- * Esta función es llamada por el webhookController cuando llega un mensaje
  */
 export const processIncomingMessage = async (
   messagePayload: {
@@ -697,7 +1149,6 @@ export const processIncomingMessage = async (
 
   const normalized = text.trim().toLowerCase();
 
-  // Cancelar en cualquier momento
   if (normalized === CANCEL_KEYWORD) {
     resetConversation(phoneNumber);
     await sendMessage(
@@ -710,7 +1161,6 @@ export const processIncomingMessage = async (
 
   const state = getConversationState(phoneNumber, tenant.id);
 
-  // Manejar estados de conversación
   switch (state.step) {
     case "selectingProduct":
       await handleProductSelection(phoneNumber, text, state, tenant);
@@ -718,6 +1168,10 @@ export const processIncomingMessage = async (
 
     case "selectingQuantity":
       await handleQuantitySelection(phoneNumber, text, state, tenant);
+      return;
+
+    case "selectingExtras":
+      await handleExtrasSelection(phoneNumber, text, state, tenant);
       return;
 
     case "askingCustomization":
@@ -736,8 +1190,16 @@ export const processIncomingMessage = async (
       await handleOrderTypeSelection(phoneNumber, text, state, tenant);
       return;
 
+    case "selectingDeliveryZone":
+      await handleDeliveryZoneSelection(phoneNumber, text, state, tenant);
+      return;
+
     case "awaitingAddress":
       await handleAddressInput(phoneNumber, text, state, tenant);
+      return;
+
+    case "awaitingDeliveryNotes":
+      await handleDeliveryNotesInput(phoneNumber, text, state, tenant);
       return;
 
     case "selectingPayment":
@@ -755,7 +1217,6 @@ export const processIncomingMessage = async (
       return;
   }
 
-  // Comandos en estado idle
   logger.info(`Mensaje entrante de ${phoneNumber} (${tenant.name}): ${text}`);
 
   const greetings = [
@@ -802,11 +1263,9 @@ export const processIncomingMessage = async (
     return;
   }
 
-  // Si el usuario escribe un número, podría querer pedir
   const maybeProductNumber = parseInt(normalized, 10);
   if (!isNaN(maybeProductNumber) && maybeProductNumber > 0) {
     await startOrderFlow(phoneNumber, tenant);
-    // Simular que el usuario escribió el número después de ver el menú
     const newState = getConversationState(phoneNumber, tenant.id);
     await handleProductSelection(phoneNumber, text, newState, tenant);
     return;

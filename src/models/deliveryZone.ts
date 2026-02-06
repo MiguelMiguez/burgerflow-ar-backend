@@ -1,16 +1,12 @@
 export interface CreateDeliveryZoneInput {
   tenantId: string;
   name: string;
-  minDistance: number;
-  maxDistance: number;
-  cost: number;
+  price: number;
 }
 
 export interface UpdateDeliveryZoneInput {
   name?: string;
-  minDistance?: number;
-  maxDistance?: number;
-  cost?: number;
+  price?: number;
   isActive?: boolean;
 }
 

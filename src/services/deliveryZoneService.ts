@@ -34,7 +34,7 @@ const mapSnapshotToDeliveryZone = (
 export const listDeliveryZones = async (
   tenantId: string,
 ): Promise<DeliveryZone[]> => {
-  const snapshot = await getCollection(tenantId).orderBy("minDistance").get();
+  const snapshot = await getCollection(tenantId).orderBy("name").get();
   return snapshot.docs.map(mapSnapshotToDeliveryZone);
 };
 
@@ -43,7 +43,7 @@ export const listActiveDeliveryZones = async (
 ): Promise<DeliveryZone[]> => {
   const snapshot = await getCollection(tenantId)
     .where("isActive", "==", true)
-    .orderBy("minDistance")
+    .orderBy("name")
     .get();
   return snapshot.docs.map(mapSnapshotToDeliveryZone);
 };
@@ -65,33 +65,22 @@ export const getDeliveryZoneById = async (
   };
 };
 
-export const getDeliveryZoneByDistance = async (
+export const getDeliveryZoneByName = async (
   tenantId: string,
-  distance: number,
+  name: string,
 ): Promise<DeliveryZone | null> => {
   const zones = await listActiveDeliveryZones(tenantId);
-
-  const matchingZone = zones.find(
-    (zone) => distance >= zone.minDistance && distance <= zone.maxDistance,
+  return (
+    zones.find((zone) => zone.name.toLowerCase() === name.toLowerCase()) || null
   );
-
-  return matchingZone || null;
 };
 
 export const calculateDeliveryCost = async (
   tenantId: string,
-  distance: number,
+  zoneId: string,
 ): Promise<number> => {
-  const zone = await getDeliveryZoneByDistance(tenantId, distance);
-
-  if (!zone) {
-    throw new HttpError(
-      400,
-      "No hay zona de delivery configurada para esa distancia.",
-    );
-  }
-
-  return zone.cost;
+  const zone = await getDeliveryZoneById(tenantId, zoneId);
+  return zone.price;
 };
 
 export const createDeliveryZone = async (
@@ -101,19 +90,8 @@ export const createDeliveryZone = async (
     throw new HttpError(400, "La zona debe tener un nombre.");
   }
 
-  if (payload.minDistance === undefined || payload.minDistance < 0) {
-    throw new HttpError(400, "La distancia mínima debe ser un número válido.");
-  }
-
-  if (
-    payload.maxDistance === undefined ||
-    payload.maxDistance <= payload.minDistance
-  ) {
-    throw new HttpError(400, "La distancia máxima debe ser mayor a la mínima.");
-  }
-
-  if (payload.cost === undefined || payload.cost < 0) {
-    throw new HttpError(400, "El costo debe ser un número válido.");
+  if (payload.price === undefined || payload.price < 0) {
+    throw new HttpError(400, "El precio debe ser un número válido.");
   }
 
   const document: DeliveryZoneDocument = {
@@ -166,5 +144,5 @@ export const deleteDeliveryZone = async (
     throw new HttpError(404, "La zona de delivery solicitada no existe.");
   }
 
-  await docRef.update({ isActive: false });
+  await docRef.delete();
 };

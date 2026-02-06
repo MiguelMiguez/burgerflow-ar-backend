@@ -218,7 +218,7 @@ export const handleUpdateOrderStatus = async (
   try {
     const tenantId = requireTenantId(req);
     const { id } = req.params;
-    const { status } = req.body;
+    const { status, deliveryId, deliveryCost } = req.body;
 
     if (!id) {
       throw new HttpError(400, "Se requiere el id del pedido.");
@@ -245,9 +245,59 @@ export const handleUpdateOrderStatus = async (
       );
     }
 
-    const order = await updateOrder(tenantId, id, { status });
+    // Construir payload de actualización
+    const updatePayload: {
+      status: OrderStatus;
+      deliveryId?: string;
+      deliveryCost?: number;
+    } = { status };
+    if (deliveryId) {
+      updatePayload.deliveryId = deliveryId;
+      logger.info(`Pedido #${id} asignado a repartidor: ${deliveryId}`);
+    }
+    if (deliveryCost !== undefined && deliveryCost >= 0) {
+      updatePayload.deliveryCost = deliveryCost;
+      logger.info(`Pedido #${id} costo de envío: ${deliveryCost}`);
+    }
+
+    const order = await updateOrder(tenantId, id, updatePayload);
     logger.info(`Pedido #${order.id} cambió a estado: ${status}`);
     res.json(order);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const handleGetDeliverySettlements = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const tenantId = requireTenantId(req);
+    const { date, deliveryId } = req.query;
+
+    if (!date || typeof date !== "string") {
+      throw new HttpError(400, "Se requiere una fecha (formato YYYY-MM-DD).");
+    }
+
+    if (deliveryId && typeof deliveryId === "string") {
+      // Rendición de un repartidor específico
+      const { getDeliverySettlement } =
+        await import("../services/orderService");
+      const settlement = await getDeliverySettlement(
+        tenantId,
+        deliveryId,
+        date,
+      );
+      res.json(settlement);
+    } else {
+      // Rendiciones de todos los repartidores
+      const { getAllDeliverySettlements } =
+        await import("../services/orderService");
+      const settlements = await getAllDeliverySettlements(tenantId, date);
+      res.json(settlements);
+    }
   } catch (error) {
     next(error);
   }

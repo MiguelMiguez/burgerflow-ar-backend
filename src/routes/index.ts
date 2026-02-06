@@ -8,6 +8,8 @@ import deliveryZoneRoutes from "./deliveryZoneRoutes";
 import cashRegisterRoutes from "./cashRegisterRoutes";
 import serviceRoutes from "./serviceRoutes";
 import bookingRoutes from "./bookingRoutes";
+import extraRoutes from "./extraRoutes";
+import userRoutes from "./userRoutes";
 
 const router = Router();
 
@@ -37,5 +39,11 @@ router.use("/delivery-zones", deliveryZoneRoutes);
 
 // Rutas de caja y reportes
 router.use("/cash-register", cashRegisterRoutes);
+
+// Rutas de extras
+router.use("/extras", extraRoutes);
+
+// Rutas de usuarios
+router.use("/users", userRoutes);
 
 export default router;

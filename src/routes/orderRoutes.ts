@@ -7,6 +7,7 @@ import {
   handleListOrders,
   handleUpdateOrder,
   handleUpdateOrderStatus,
+  handleGetDeliverySettlements,
 } from "../controllers/orderController";
 import { authorize } from "../middlewares/authorize";
 
@@ -14,6 +15,9 @@ const router = Router();
 
 // Listar pedidos (con filtros: ?status=pendiente&date=2026-02-03&pending=true)
 router.get("/", authorize("admin", "user"), handleListOrders);
+
+// Rendiciones de repartidores (?date=2026-02-03&deliveryId=xxx opcional)
+router.get("/settlements", authorize("admin"), handleGetDeliverySettlements);
 
 // Obtener pedido por ID
 router.get("/:id", authorize("admin", "user"), handleGetOrder);

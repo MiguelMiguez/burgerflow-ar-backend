@@ -173,3 +173,73 @@ export const sendWhatsappMessage = async (
     return false;
   }
 };
+
+/**
+ * Envía una notificación al admin/dueño cuando llega un pedido nuevo
+ */
+export const sendNewOrderNotification = async (
+  order: Order,
+): Promise<boolean> => {
+  try {
+    const tenant = await getTenantById(order.tenantId);
+
+    if (!tenant) {
+      logger.warn(
+        `No se encontró tenant ${order.tenantId} para enviar notificación`,
+      );
+      return false;
+    }
+
+    // Verificar que el tenant tenga número de notificación configurado
+    if (!tenant.notificationPhone) {
+      logger.debug(
+        `Tenant ${tenant.name} no tiene teléfono de notificación configurado`,
+      );
+      return false;
+    }
+
+    if (!tenant.metaPhoneNumberId || !tenant.metaAccessToken) {
+      logger.warn(
+        `Tenant ${tenant.name} no tiene credenciales de Meta configuradas`,
+      );
+      return false;
+    }
+
+    const formatPrice = (price: number): string =>
+      `$${price.toLocaleString("es-AR", { minimumFractionDigits: 0 })}`;
+
+    const orderTypeEmoji = order.orderType === "delivery" ? "🏍️" : "🏪";
+    const orderTypeLabel =
+      order.orderType === "delivery" ? "Delivery" : "Retiro";
+
+    const itemsList = order.items
+      .map((item) => `• ${item.quantity}x ${item.productName}`)
+      .join("\n");
+
+    const message =
+      `🔔 *NUEVO PEDIDO #${order.id.slice(-6).toUpperCase()}*\n\n` +
+      `👤 *Cliente:* ${order.customerName}\n` +
+      `📱 *Tel:* ${order.customerPhone}\n` +
+      `${orderTypeEmoji} *Tipo:* ${orderTypeLabel}\n` +
+      (order.deliveryAddress
+        ? `📍 *Dirección:* ${order.deliveryAddress}\n`
+        : "") +
+      `💳 *Pago:* ${order.paymentMethod === "efectivo" ? "Efectivo" : "Transferencia"}\n\n` +
+      `📝 *Productos:*\n${itemsList}\n\n` +
+      `💰 *Total: ${formatPrice(order.total)}*\n\n` +
+      `Ingresa al panel para confirmar el pedido.`;
+
+    await sendMessage(tenant.notificationPhone, message, tenant);
+
+    logger.info(
+      `Notificación de nuevo pedido enviada a ${tenant.notificationPhone} - Pedido #${order.id.slice(-6)}`,
+    );
+    return true;
+  } catch (error) {
+    logger.error(
+      `Error al enviar notificación de nuevo pedido al admin`,
+      error,
+    );
+    return false;
+  }
+};

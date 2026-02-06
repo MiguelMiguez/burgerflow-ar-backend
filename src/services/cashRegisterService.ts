@@ -121,10 +121,14 @@ export const closeCashRegister = async (
     date,
     summary,
     closedBy,
-    notes,
     closedAt: now,
     createdAt: now,
   };
+
+  // Solo agregar notes si tiene valor (Firestore no acepta undefined)
+  if (notes) {
+    document.notes = notes;
+  }
 
   const docRef = await getCollection(tenantId).add(document);
 
