@@ -5,7 +5,10 @@ import {
   listAvailableProducts,
   getProductById,
 } from "../services/productService";
-import { listActiveDeliveryZones, listDeliveryZones } from "../services/deliveryZoneService";
+import {
+  listActiveDeliveryZones,
+  listDeliveryZones,
+} from "../services/deliveryZoneService";
 import { listActiveExtras } from "../services/extraService";
 import { getIngredientById } from "../services/ingredientService";
 import type { Tenant } from "../models/tenant";
@@ -493,7 +496,11 @@ const handleCustomizationTypeSelection = async (
   const normalized = text.trim().toLowerCase();
 
   // Opción para continuar sin personalización
-  if (normalized === "3" || normalized === "continuar" || normalized === "listo") {
+  if (
+    normalized === "3" ||
+    normalized === "continuar" ||
+    normalized === "listo"
+  ) {
     await askForMoreProducts(phoneNumber, state, tenant);
     return;
   }
@@ -504,7 +511,11 @@ const handleCustomizationTypeSelection = async (
   }
 
   let customizationType: "agregar" | "quitar";
-  let ingredients: { ingredientId: string; ingredientName: string; extraPrice: number }[];
+  let ingredients: {
+    ingredientId: string;
+    ingredientName: string;
+    extraPrice: number;
+  }[];
 
   if (normalized === "1" || normalized.includes("agregar")) {
     customizationType = "agregar";
@@ -549,7 +560,8 @@ const handleCustomizationTypeSelection = async (
   });
 
   const ingredientsList = ingredients.map((ing, index) => {
-    const price = ing.extraPrice > 0 ? ` (+${formatPrice(ing.extraPrice)})` : "";
+    const price =
+      ing.extraPrice > 0 ? ` (+${formatPrice(ing.extraPrice)})` : "";
     return `*${index + 1}.* ${ing.ingredientName}${price}`;
   });
 
@@ -595,7 +607,7 @@ const handleCustomizationSelection = async (
   // Filtrar según el tipo de personalización seleccionado
   const customizationType = state.customizationType || "quitar";
   const availableCustomizations = state.currentProduct.ingredients.filter(
-    (ing) => customizationType === "agregar" ? ing.isExtra : ing.isRemovable,
+    (ing) => (customizationType === "agregar" ? ing.isExtra : ing.isRemovable),
   );
 
   if (
@@ -616,7 +628,8 @@ const handleCustomizationSelection = async (
     ingredientId: selectedIngredient.ingredientId,
     ingredientName: selectedIngredient.ingredientName,
     type: customizationType,
-    extraPrice: customizationType === "agregar" ? (selectedIngredient.extraPrice || 0) : 0,
+    extraPrice:
+      customizationType === "agregar" ? selectedIngredient.extraPrice || 0 : 0,
   };
 
   const updatedCart = [...state.cart];
@@ -624,7 +637,9 @@ const handleCustomizationSelection = async (
   if (lastItem) {
     // Verificar que no se agregue la misma personalización dos veces
     const alreadyExists = lastItem.customizations.some(
-      (c) => c.ingredientId === customization.ingredientId && c.type === customization.type,
+      (c) =>
+        c.ingredientId === customization.ingredientId &&
+        c.type === customization.type,
     );
     if (!alreadyExists) {
       lastItem.customizations.push(customization);
@@ -636,8 +651,12 @@ const handleCustomizationSelection = async (
     cart: updatedCart,
   });
 
-  const action = customization.type === "agregar" ? "✅ Agregaste" : "❌ Quitaste";
-  const priceInfo = customization.extraPrice > 0 ? ` (+${formatPrice(customization.extraPrice)})` : "";
+  const action =
+    customization.type === "agregar" ? "✅ Agregaste" : "❌ Quitaste";
+  const priceInfo =
+    customization.extraPrice > 0
+      ? ` (+${formatPrice(customization.extraPrice)})`
+      : "";
   await sendMessage(
     phoneNumber,
     `${action} *${customization.ingredientName}*${priceInfo}\n\nEscribe otro número para más cambios o *listo* para continuar.`,
@@ -717,7 +736,9 @@ const handleDeliveryFlow = async (
 ): Promise<void> => {
   try {
     const zones = await getActiveZonesWithFallback(state.tenantId);
-    logger.info(`Zonas de delivery encontradas para ${tenant.name}: ${zones.length}`);
+    logger.info(
+      `Zonas de delivery encontradas para ${tenant.name}: ${zones.length}`,
+    );
 
     if (zones.length > 0) {
       setConversationState(phoneNumber, {
@@ -738,7 +759,9 @@ const handleDeliveryFlow = async (
       );
     } else {
       // No hay zonas configuradas - usar envío gratuito o continuar sin costo
-      logger.warn(`No hay zonas de delivery para tenant ${tenant.name}, continuando sin costo de envío`);
+      logger.warn(
+        `No hay zonas de delivery para tenant ${tenant.name}, continuando sin costo de envío`,
+      );
       setConversationState(phoneNumber, {
         ...state,
         step: "awaitingAddress",
@@ -753,8 +776,11 @@ const handleDeliveryFlow = async (
       );
     }
   } catch (error) {
-    logger.error(`Error al obtener zonas de delivery para ${tenant.name}:`, error);
-    
+    logger.error(
+      `Error al obtener zonas de delivery para ${tenant.name}:`,
+      error,
+    );
+
     // Si todo falló, continuar sin zona
     setConversationState(phoneNumber, {
       ...state,
@@ -810,13 +836,17 @@ const handleOrderTypeSelection = async (
   }
 };
 
-const getActiveZonesWithFallback = async (tenantId: string): Promise<DeliveryZone[]> => {
+const getActiveZonesWithFallback = async (
+  tenantId: string,
+): Promise<DeliveryZone[]> => {
   try {
     return await listActiveDeliveryZones(tenantId);
   } catch (error) {
-    logger.warn("listActiveDeliveryZones falló, usando fallback con listDeliveryZones");
+    logger.warn(
+      "listActiveDeliveryZones falló, usando fallback con listDeliveryZones",
+    );
     const allZones = await listDeliveryZones(tenantId);
-    return allZones.filter(z => z.isActive !== false);
+    return allZones.filter((z) => z.isActive !== false);
   }
 };
 
@@ -871,10 +901,11 @@ const handleAddressInput = async (
 ): Promise<void> => {
   const address = text.trim();
 
-  if (address.length < 10) {
+  // Validar que contenga al menos un número (altura de la calle)
+  if (!/\d+/.test(address)) {
     await sendMessage(
       phoneNumber,
-      "Por favor, escribe una dirección más completa para poder enviarte el pedido.",
+      "Por favor, incluí la *altura* (número) de la calle. Ejemplo: *Alsina 555*",
       tenant,
     );
     return;
