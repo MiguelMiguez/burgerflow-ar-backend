@@ -5,12 +5,29 @@ const format = (level: LogLevel, message: string): string => {
   return `[${timestamp}] ${level.toUpperCase()}: ${message}`;
 };
 
+const formatContext = (context: unknown): string => {
+  if (context === undefined || context === null) {
+    return "";
+  }
+  try {
+    return JSON.stringify(context, null, 2);
+  } catch {
+    return String(context);
+  }
+};
+
 export const logger = {
-  info: (message: string): void => {
+  info: (message: string, context?: unknown): void => {
     console.log(format("info", message));
+    if (context !== undefined) {
+      console.log(formatContext(context));
+    }
   },
-  warn: (message: string): void => {
+  warn: (message: string, context?: unknown): void => {
     console.warn(format("warn", message));
+    if (context !== undefined) {
+      console.warn(formatContext(context));
+    }
   },
   error: (message: string, error?: unknown): void => {
     if (error instanceof Error) {
@@ -26,11 +43,20 @@ export const logger = {
       return;
     }
 
+    if (error !== undefined && error !== null) {
+      console.error(format("error", message));
+      console.error(formatContext(error));
+      return;
+    }
+
     console.error(format("error", message));
   },
-  debug: (message: string): void => {
+  debug: (message: string, context?: unknown): void => {
     if (process.env.NODE_ENV === "development") {
       console.debug(format("debug", message));
+      if (context !== undefined) {
+        console.debug(formatContext(context));
+      }
     }
   },
 };

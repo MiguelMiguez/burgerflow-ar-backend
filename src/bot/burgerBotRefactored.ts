@@ -1175,9 +1175,13 @@ const handleOrderConfirmation = async (
         quantity: cartItem.quantity,
         unitPrice,
         customizations: cartItem.customizations,
-        extras: orderExtras.length > 0 ? orderExtras : undefined,
         itemTotal,
       };
+
+      // Solo agregar extras si hay (Firestore no acepta undefined)
+      if (orderExtras.length > 0) {
+        item.extras = orderExtras;
+      }
 
       if (cartItem.notes) {
         item.notes = cartItem.notes;
@@ -1229,17 +1233,29 @@ const handleOrderConfirmation = async (
       tenant,
     );
   } catch (error) {
-    logger.error("Error al crear el pedido", {
-      error: error instanceof Error ? error.message : error,
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorDetails = {
+      error: errorMessage,
       stack: error instanceof Error ? error.stack : undefined,
+      phoneNumber,
       orderInput: {
         tenantId: state.tenantId,
         customerName: state.customerName,
+        customerPhone: phoneNumber,
         orderType: state.orderType,
         deliveryAddress: state.deliveryAddress,
+        paymentMethod: state.paymentMethod,
         itemsCount: state.cart.length,
+        cartItems: state.cart.map((item) => ({
+          productId: item.product.id,
+          productName: item.product.name,
+          quantity: item.quantity,
+          extrasCount: item.extras.length,
+        })),
       },
-    });
+    };
+
+    logger.error(`Error al crear el pedido para ${phoneNumber}`, errorDetails);
 
     if (isHttpError(error)) {
       await sendMessage(
@@ -1248,9 +1264,10 @@ const handleOrderConfirmation = async (
         tenant,
       );
     } else {
+      // Mensaje más informativo para errores no-HTTP
       await sendMessage(
         phoneNumber,
-        "Hubo un problema al procesar tu pedido. Por favor, intenta nuevamente.",
+        `Hubo un problema técnico al procesar tu pedido. Error: ${errorMessage}\n\nPor favor, intenta nuevamente o contacta al local.`,
         tenant,
       );
     }
