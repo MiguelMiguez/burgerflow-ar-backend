@@ -13,6 +13,19 @@ import type { Tenant } from "../models/tenant";
 /**
  * Estructura del webhook de Meta para mensajes entrantes
  */
+interface MetaInteractiveReply {
+  type: "button_reply" | "list_reply";
+  button_reply?: {
+    id: string;
+    title: string;
+  };
+  list_reply?: {
+    id: string;
+    title: string;
+    description?: string;
+  };
+}
+
 interface MetaMessage {
   from: string;
   id: string;
@@ -20,7 +33,8 @@ interface MetaMessage {
   text?: {
     body: string;
   };
-  type: "text" | "image" | "audio" | "video" | "document" | "location";
+  interactive?: MetaInteractiveReply;
+  type: "text" | "image" | "audio" | "video" | "document" | "location" | "interactive";
 }
 
 interface MetaContact {
@@ -194,21 +208,40 @@ async function processIncomingMessage(
   tenant: Tenant,
 ): Promise<void> {
   try {
-    const { from, id: messageId, type, text, timestamp } = message;
+    const { from, id: messageId, type, text, interactive, timestamp } = message;
 
     logger.info(
       `Procesando mensaje ${messageId} de ${from} (tipo: ${type}, tenant: ${tenant.name})`,
     );
 
-    // Solo procesar mensajes de texto por ahora
-    if (type !== "text" || !text) {
+    let messageText: string | undefined;
+
+    // Procesar según el tipo de mensaje
+    if (type === "text" && text) {
+      messageText = text.body;
+    } else if (type === "interactive" && interactive) {
+      // Extraer texto de respuestas interactivas (botones o listas)
+      if (interactive.type === "button_reply" && interactive.button_reply) {
+        // Para botones, usar el ID como texto (más confiable que el título)
+        messageText = interactive.button_reply.id;
+        logger.info(
+          `Botón presionado: "${interactive.button_reply.title}" (id: ${interactive.button_reply.id})`,
+        );
+      } else if (interactive.type === "list_reply" && interactive.list_reply) {
+        // Para listas, usar el ID como texto
+        messageText = interactive.list_reply.id;
+        logger.info(
+          `Item de lista seleccionado: "${interactive.list_reply.title}" (id: ${interactive.list_reply.id})`,
+        );
+      }
+    }
+
+    if (!messageText) {
       logger.warn(
-        `Tipo de mensaje no soportado: ${type}. Mensaje ${messageId} ignorado.`,
+        `Tipo de mensaje no soportado o sin contenido: ${type}. Mensaje ${messageId} ignorado.`,
       );
       return;
     }
-
-    const messageText = text.body;
 
     // Buscar el nombre del contacto si está disponible
     const contactName = contacts?.find((c) => c.wa_id === from)?.profile?.name;

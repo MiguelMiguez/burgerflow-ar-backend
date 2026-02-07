@@ -273,3 +273,220 @@ export const markMessageAsRead = async (
     logger.warn(`No se pudo marcar mensaje ${messageId} como leído`);
   }
 };
+
+/**
+ * Interfaz para botones interactivos
+ */
+interface InteractiveButton {
+  id: string;
+  title: string;
+}
+
+/**
+ * Envía un mensaje con botones interactivos (máximo 3 botones)
+ * Los usuarios pueden tocar los botones para responder
+ *
+ * @param to - Número de teléfono del destinatario
+ * @param body - Texto del mensaje principal
+ * @param buttons - Array de botones (máximo 3)
+ * @param tenant - Objeto Tenant con las credenciales de Meta
+ * @param header - Texto opcional del encabezado
+ * @param footer - Texto opcional del pie
+ * @returns ID del mensaje enviado
+ */
+export const sendInteractiveButtons = async (
+  to: string,
+  body: string,
+  buttons: InteractiveButton[],
+  tenant: Tenant,
+  header?: string,
+  footer?: string,
+): Promise<string> => {
+  try {
+    validateTenantCredentials(tenant);
+
+    if (buttons.length === 0 || buttons.length > 3) {
+      throw new Error("Los mensajes interactivos requieren entre 1 y 3 botones");
+    }
+
+    const sanitizedPhone = to.replace(/[\s\-\(\)\+]/g, "");
+
+    const payload: Record<string, unknown> = {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: sanitizedPhone,
+      type: "interactive",
+      interactive: {
+        type: "button",
+        body: {
+          text: body,
+        },
+        action: {
+          buttons: buttons.map((btn) => ({
+            type: "reply",
+            reply: {
+              id: btn.id,
+              title: btn.title.substring(0, 20), // WhatsApp limita a 20 caracteres
+            },
+          })),
+        },
+      },
+    };
+
+    // Agregar header si existe
+    if (header) {
+      (payload.interactive as Record<string, unknown>).header = {
+        type: "text",
+        text: header.substring(0, 60), // WhatsApp limita a 60 caracteres
+      };
+    }
+
+    // Agregar footer si existe
+    if (footer) {
+      (payload.interactive as Record<string, unknown>).footer = {
+        text: footer.substring(0, 60), // WhatsApp limita a 60 caracteres
+      };
+    }
+
+    const url = getGraphApiUrl(tenant.metaPhoneNumberId!);
+
+    logger.info(
+      `Enviando mensaje interactivo (botones) a ${sanitizedPhone} (tenant: ${tenant.name})`,
+    );
+
+    const response = await axios.post<MetaMessageResponse>(url, payload, {
+      headers: {
+        Authorization: `Bearer ${tenant.metaAccessToken}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 15000,
+    });
+
+    const messageId = response.data.messages[0]?.id;
+
+    if (!messageId) {
+      throw new Error("Meta API no devolvió un ID de mensaje válido");
+    }
+
+    logger.info(
+      `Mensaje interactivo enviado. ID: ${messageId}, Destinatario: ${sanitizedPhone}`,
+    );
+
+    return messageId;
+  } catch (error) {
+    return handleMetaApiError(error, "sendInteractiveButtons");
+  }
+};
+
+/**
+ * Interfaz para items de lista
+ */
+interface ListItem {
+  id: string;
+  title: string;
+  description?: string;
+}
+
+/**
+ * Interfaz para secciones de lista
+ */
+interface ListSection {
+  title: string;
+  rows: ListItem[];
+}
+
+/**
+ * Envía un mensaje con lista interactiva (para menús largos)
+ * Los usuarios pueden seleccionar una opción de la lista
+ *
+ * @param to - Número de teléfono del destinatario
+ * @param body - Texto del mensaje principal
+ * @param buttonText - Texto del botón que abre la lista
+ * @param sections - Secciones con los items de la lista
+ * @param tenant - Objeto Tenant con las credenciales de Meta
+ * @param header - Texto opcional del encabezado
+ * @param footer - Texto opcional del pie
+ * @returns ID del mensaje enviado
+ */
+export const sendInteractiveList = async (
+  to: string,
+  body: string,
+  buttonText: string,
+  sections: ListSection[],
+  tenant: Tenant,
+  header?: string,
+  footer?: string,
+): Promise<string> => {
+  try {
+    validateTenantCredentials(tenant);
+
+    const sanitizedPhone = to.replace(/[\s\-\(\)\+]/g, "");
+
+    const payload: Record<string, unknown> = {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: sanitizedPhone,
+      type: "interactive",
+      interactive: {
+        type: "list",
+        body: {
+          text: body,
+        },
+        action: {
+          button: buttonText.substring(0, 20), // WhatsApp limita a 20 caracteres
+          sections: sections.map((section) => ({
+            title: section.title.substring(0, 24), // WhatsApp limita a 24 caracteres
+            rows: section.rows.map((row) => ({
+              id: row.id,
+              title: row.title.substring(0, 24), // WhatsApp limita a 24 caracteres
+              description: row.description?.substring(0, 72), // WhatsApp limita a 72 caracteres
+            })),
+          })),
+        },
+      },
+    };
+
+    // Agregar header si existe
+    if (header) {
+      (payload.interactive as Record<string, unknown>).header = {
+        type: "text",
+        text: header.substring(0, 60),
+      };
+    }
+
+    // Agregar footer si existe
+    if (footer) {
+      (payload.interactive as Record<string, unknown>).footer = {
+        text: footer.substring(0, 60),
+      };
+    }
+
+    const url = getGraphApiUrl(tenant.metaPhoneNumberId!);
+
+    logger.info(
+      `Enviando mensaje interactivo (lista) a ${sanitizedPhone} (tenant: ${tenant.name})`,
+    );
+
+    const response = await axios.post<MetaMessageResponse>(url, payload, {
+      headers: {
+        Authorization: `Bearer ${tenant.metaAccessToken}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 15000,
+    });
+
+    const messageId = response.data.messages[0]?.id;
+
+    if (!messageId) {
+      throw new Error("Meta API no devolvió un ID de mensaje válido");
+    }
+
+    logger.info(
+      `Mensaje de lista enviado. ID: ${messageId}, Destinatario: ${sanitizedPhone}`,
+    );
+
+    return messageId;
+  } catch (error) {
+    return handleMetaApiError(error, "sendInteractiveList");
+  }
+};

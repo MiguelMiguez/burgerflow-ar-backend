@@ -1,5 +1,9 @@
 import { logger } from "../utils/logger";
-import { sendMessage } from "../services/metaService";
+import {
+  sendMessage,
+  sendInteractiveButtons,
+  sendInteractiveList,
+} from "../services/metaService";
 import { createOrder } from "../services/orderService";
 import {
   listAvailableProducts,
@@ -345,9 +349,13 @@ const handleQuantitySelection = async (
         currentQuantity: quantity,
       });
 
-      await sendMessage(
+      await sendInteractiveButtons(
         phoneNumber,
-        `Agregaste ${quantity}x *${state.currentProduct.name}* al carrito.\n\n¿Deseas agregar o quitar algo?\n\n*1.* Sí\n*2.* No`,
+        `Agregaste ${quantity}x *${state.currentProduct.name}* al carrito.\n\n¿Deseas agregar o quitar algo?`,
+        [
+          { id: "btn_personalizar_si", title: "✅ Sí" },
+          { id: "btn_personalizar_no", title: "❌ No" },
+        ],
         tenant,
       );
     }
@@ -361,9 +369,13 @@ const handleQuantitySelection = async (
       currentQuantity: quantity,
     });
 
-    await sendMessage(
+    await sendInteractiveButtons(
       phoneNumber,
-      `Agregaste ${quantity}x *${state.currentProduct.name}* al carrito.\n\n¿Deseas agregar o quitar algo?\n\n*1.* Sí\n*2.* No`,
+      `Agregaste ${quantity}x *${state.currentProduct.name}* al carrito.\n\n¿Deseas agregar o quitar algo?`,
+      [
+        { id: "btn_personalizar_si", title: "✅ Sí" },
+        { id: "btn_personalizar_no", title: "❌ No" },
+      ],
       tenant,
     );
   }
@@ -385,9 +397,13 @@ const handleExtrasSelection = async (
       availableExtras: undefined,
     });
 
-    await sendMessage(
+    await sendInteractiveButtons(
       phoneNumber,
-      `¿Deseas agregar o quitar algo del producto?\n\n*1.* Sí\n*2.* No`,
+      "¿Deseas agregar o quitar algo del producto?",
+      [
+        { id: "btn_personalizar_si", title: "✅ Sí" },
+        { id: "btn_personalizar_no", title: "❌ No" },
+      ],
       tenant,
     );
     return;
@@ -442,7 +458,7 @@ const handleCustomizationQuestion = async (
 ): Promise<void> => {
   const normalized = text.trim().toLowerCase();
 
-  if (normalized === "si" || normalized === "sí" || normalized === "1") {
+  if (normalized === "btn_personalizar_si" || normalized === "si" || normalized === "sí" || normalized === "1") {
     if (!state.currentProduct) {
       await askForMoreProducts(phoneNumber, state, tenant);
       return;
@@ -471,17 +487,26 @@ const handleCustomizationQuestion = async (
       step: "selectingCustomizationType",
     });
 
-    await sendMessage(
+    await sendInteractiveButtons(
       phoneNumber,
-      `¿Qué deseas hacer?\n\n*1.* ➕ Agregar ingredientes\n*2.* ➖ Quitar ingredientes\n\nEscribe el *número* de la opción.`,
+      "¿Qué deseas hacer?",
+      [
+        { id: "btn_agregar", title: "➕ Agregar" },
+        { id: "btn_quitar", title: "➖ Quitar" },
+        { id: "btn_continuar", title: "➡️ Continuar" },
+      ],
       tenant,
     );
-  } else if (normalized === "no" || normalized === "2") {
+  } else if (normalized === "btn_personalizar_no" || normalized === "no" || normalized === "2") {
     await askForMoreProducts(phoneNumber, state, tenant);
   } else {
-    await sendMessage(
+    await sendInteractiveButtons(
       phoneNumber,
-      "Por favor, responde *1* (Sí) o *2* (No).",
+      "Por favor, selecciona una opción:",
+      [
+        { id: "btn_personalizar_si", title: "✅ Sí" },
+        { id: "btn_personalizar_no", title: "❌ No" },
+      ],
       tenant,
     );
   }
@@ -497,6 +522,7 @@ const handleCustomizationTypeSelection = async (
 
   // Opción para continuar sin personalización
   if (
+    normalized === "btn_continuar" ||
     normalized === "3" ||
     normalized === "continuar" ||
     normalized === "listo"
@@ -517,7 +543,7 @@ const handleCustomizationTypeSelection = async (
     extraPrice: number;
   }[];
 
-  if (normalized === "1" || normalized.includes("agregar")) {
+  if (normalized === "btn_agregar" || normalized === "1" || normalized.includes("agregar")) {
     customizationType = "agregar";
     ingredients = state.currentProduct.ingredients
       .filter((ing) => ing.isExtra)
@@ -526,7 +552,7 @@ const handleCustomizationTypeSelection = async (
         ingredientName: ing.ingredientName,
         extraPrice: ing.extraPrice || 0,
       }));
-  } else if (normalized === "2" || normalized.includes("quitar")) {
+  } else if (normalized === "btn_quitar" || normalized === "2" || normalized.includes("quitar")) {
     customizationType = "quitar";
     ingredients = state.currentProduct.ingredients
       .filter((ing) => ing.isRemovable)
@@ -536,18 +562,28 @@ const handleCustomizationTypeSelection = async (
         extraPrice: 0,
       }));
   } else {
-    await sendMessage(
+    await sendInteractiveButtons(
       phoneNumber,
-      "Por favor, escribe *1* para agregar, *2* para quitar o *3* para continuar.",
+      "Por favor, selecciona una opción:",
+      [
+        { id: "btn_agregar", title: "➕ Agregar" },
+        { id: "btn_quitar", title: "➖ Quitar" },
+        { id: "btn_continuar", title: "➡️ Continuar" },
+      ],
       tenant,
     );
     return;
   }
 
   if (ingredients.length === 0) {
-    await sendMessage(
+    await sendInteractiveButtons(
       phoneNumber,
-      `No hay opciones disponibles para ${customizationType}. ¿Deseas hacer otra cosa?\n\n*1.* ➕ Agregar ingredientes\n*2.* ➖ Quitar ingredientes\n*3.* Continuar sin cambios`,
+      `No hay opciones disponibles para ${customizationType}. ¿Deseas hacer otra cosa?`,
+      [
+        { id: "btn_agregar", title: "➕ Agregar" },
+        { id: "btn_quitar", title: "➖ Quitar" },
+        { id: "btn_continuar", title: "➡️ Continuar" },
+      ],
       tenant,
     );
     return;
@@ -589,9 +625,14 @@ const handleCustomizationSelection = async (
       customizationType: undefined,
     });
 
-    await sendMessage(
+    await sendInteractiveButtons(
       phoneNumber,
-      `¿Deseas hacer otra personalización?\n\n*1.* ➕ Agregar ingredientes\n*2.* ➖ Quitar ingredientes\n*3.* Continuar con el pedido`,
+      "¿Deseas hacer otra personalización?",
+      [
+        { id: "btn_agregar", title: "➕ Agregar" },
+        { id: "btn_quitar", title: "➖ Quitar" },
+        { id: "btn_continuar", title: "➡️ Continuar" },
+      ],
       tenant,
     );
     return;
@@ -678,9 +719,13 @@ const askForMoreProducts = async (
   });
 
   await sendMessage(phoneNumber, formatCart(state.cart), tenant);
-  await sendMessage(
+  await sendInteractiveButtons(
     phoneNumber,
-    "¿Deseas agregar otro producto?\n\nResponde *si* para agregar más o *no* para continuar con el pedido.",
+    "¿Deseas agregar otro producto?",
+    [
+      { id: "btn_mas_productos_si", title: "✅ Sí, agregar más" },
+      { id: "btn_mas_productos_no", title: "➡️ No, continuar" },
+    ],
     tenant,
   );
 };
@@ -693,7 +738,8 @@ const handleMoreProductsQuestion = async (
 ): Promise<void> => {
   const normalized = text.trim().toLowerCase();
 
-  if (normalized === "si" || normalized === "sí") {
+  // Aceptar botón interactivo o texto
+  if (normalized === "btn_mas_productos_si" || normalized === "si" || normalized === "sí") {
     await startOrderFlow(phoneNumber, tenant);
   } else {
     // Verificar si el tenant tiene delivery y/o pickup habilitados
@@ -706,9 +752,13 @@ const handleMoreProductsQuestion = async (
         step: "selectingOrderType",
       });
 
-      await sendMessage(
+      await sendInteractiveButtons(
         phoneNumber,
-        "¿Cómo deseas recibir tu pedido?\n\n*1.* 🚗 Delivery (envío a domicilio)\n*2.* 🏪 Retiro en local",
+        "¿Cómo deseas recibir tu pedido?",
+        [
+          { id: "btn_delivery", title: "🚗 Delivery" },
+          { id: "btn_pickup", title: "🏪 Retiro en local" },
+        ],
         tenant,
       );
     } else if (hasDelivery) {
@@ -720,9 +770,13 @@ const handleMoreProductsQuestion = async (
         orderType: "pickup",
       });
 
-      await sendMessage(
+      await sendInteractiveButtons(
         phoneNumber,
-        "Perfecto, retiro en local.\n\n¿Cómo deseas pagar?\n\n*1.* Efectivo\n*2.* Transferencia",
+        "Perfecto, retiro en local.\n\n¿Cómo deseas pagar?",
+        [
+          { id: "btn_efectivo", title: "💵 Efectivo" },
+          { id: "btn_transferencia", title: "💳 Transferencia" },
+        ],
         tenant,
       );
     }
@@ -806,12 +860,14 @@ const handleOrderTypeSelection = async (
   const normalized = text.trim().toLowerCase();
 
   if (
+    normalized === "btn_delivery" ||
     normalized === "1" ||
     normalized.includes("delivery") ||
     normalized.includes("envio")
   ) {
     await handleDeliveryFlow(phoneNumber, state, tenant);
   } else if (
+    normalized === "btn_pickup" ||
     normalized === "2" ||
     normalized.includes("retiro") ||
     normalized.includes("local")
@@ -822,15 +878,23 @@ const handleOrderTypeSelection = async (
       orderType: "pickup",
     });
 
-    await sendMessage(
+    await sendInteractiveButtons(
       phoneNumber,
-      "Perfecto, retiro en local.\n\n¿Cómo deseas pagar?\n\n*1.* Efectivo\n*2.* Transferencia",
+      "Perfecto, retiro en local.\n\n¿Cómo deseas pagar?",
+      [
+        { id: "btn_efectivo", title: "💵 Efectivo" },
+        { id: "btn_transferencia", title: "💳 Transferencia" },
+      ],
       tenant,
     );
   } else {
-    await sendMessage(
+    await sendInteractiveButtons(
       phoneNumber,
-      "Por favor, escribe *1* para delivery o *2* para retiro en local.",
+      "Por favor, selecciona una opción:",
+      [
+        { id: "btn_delivery", title: "🚗 Delivery" },
+        { id: "btn_pickup", title: "🏪 Retiro en local" },
+      ],
       tenant,
     );
   }
@@ -955,8 +1019,17 @@ const handleDeliveryNotesInput = async (
   await sendMessage(
     phoneNumber,
     `✅ Referencia guardada: _${notes}_\n\n` +
-      `Costo de envío: ${formatPrice(deliveryCost)}\n\n` +
-      `¿Cómo deseas pagar?\n\n*1.* 💵 Efectivo\n*2.* 💳 Transferencia`,
+      `Costo de envío: ${formatPrice(deliveryCost)}`,
+    tenant,
+  );
+
+  await sendInteractiveButtons(
+    phoneNumber,
+    "¿Cómo deseas pagar?",
+    [
+      { id: "btn_efectivo", title: "💵 Efectivo" },
+      { id: "btn_transferencia", title: "💳 Transferencia" },
+    ],
     tenant,
   );
 };
@@ -972,14 +1045,18 @@ const handlePaymentSelection = async (
 
   let paymentMethod: "efectivo" | "transferencia";
 
-  if (normalized === "1" || normalized.includes("efectivo")) {
+  if (normalized === "btn_efectivo" || normalized === "1" || normalized.includes("efectivo")) {
     paymentMethod = "efectivo";
-  } else if (normalized === "2" || normalized.includes("transferencia")) {
+  } else if (normalized === "btn_transferencia" || normalized === "2" || normalized.includes("transferencia")) {
     paymentMethod = "transferencia";
   } else {
-    await sendMessage(
+    await sendInteractiveButtons(
       phoneNumber,
-      "Por favor, escribe *1* para efectivo o *2* para transferencia.",
+      "Por favor, selecciona un método de pago:",
+      [
+        { id: "btn_efectivo", title: "💵 Efectivo" },
+        { id: "btn_transferencia", title: "💳 Transferencia" },
+      ],
       tenant,
     );
     return;
@@ -1030,8 +1107,17 @@ const handlePaymentSelection = async (
       `${formatCart(state.cart, deliveryCost)}\n\n` +
       `${orderTypeText}\n` +
       `Pago: ${paymentText}\n\n` +
-      `*TOTAL: ${formatPrice(total)}*\n\n` +
-      `¿Confirmamos el pedido?\n\nResponde *confirmar* o *cancelar*.`,
+      `*TOTAL: ${formatPrice(total)}*`,
+    tenant,
+  );
+
+  await sendInteractiveButtons(
+    phoneNumber,
+    "¿Confirmamos el pedido?",
+    [
+      { id: "btn_confirmar", title: "✅ Confirmar" },
+      { id: "btn_cancelar", title: "❌ Cancelar" },
+    ],
     tenant,
   );
 };
@@ -1143,7 +1229,7 @@ const handleOrderConfirmation = async (
 ): Promise<void> => {
   const normalized = text.trim().toLowerCase();
 
-  if (normalized === "cancelar") {
+  if (normalized === "btn_cancelar" || normalized === "cancelar") {
     resetConversation(phoneNumber);
     await sendMessage(
       phoneNumber,
@@ -1153,10 +1239,14 @@ const handleOrderConfirmation = async (
     return;
   }
 
-  if (normalized !== "confirmar") {
-    await sendMessage(
+  if (normalized !== "btn_confirmar" && normalized !== "confirmar") {
+    await sendInteractiveButtons(
       phoneNumber,
-      "Escribe *confirmar* para realizar el pedido o *cancelar* para cancelar.",
+      "Por favor, selecciona una opción:",
+      [
+        { id: "btn_confirmar", title: "✅ Confirmar" },
+        { id: "btn_cancelar", title: "❌ Cancelar" },
+      ],
       tenant,
     );
     return;
