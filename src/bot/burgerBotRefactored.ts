@@ -5,7 +5,7 @@ import {
   listAvailableProducts,
   getProductById,
 } from "../services/productService";
-import { listActiveDeliveryZones } from "../services/deliveryZoneService";
+import { listActiveDeliveryZones, listDeliveryZones } from "../services/deliveryZoneService";
 import { listActiveExtras } from "../services/extraService";
 import { getIngredientById } from "../services/ingredientService";
 import type { Tenant } from "../models/tenant";
@@ -723,6 +723,7 @@ const handleDeliveryFlow = async (
 ): Promise<void> => {
   try {
     const zones = await listActiveDeliveryZones(state.tenantId);
+    logger.info(`Zonas de delivery encontradas para ${tenant.name}: ${zones.length}`);
 
     if (zones.length > 0) {
       setConversationState(phoneNumber, {
@@ -742,10 +743,13 @@ const handleDeliveryFlow = async (
         tenant,
       );
     } else {
+      // No hay zonas configuradas - usar envío gratuito o continuar sin costo
+      logger.warn(`No hay zonas de delivery para tenant ${tenant.name}, continuando sin costo de envío`);
       setConversationState(phoneNumber, {
         ...state,
         step: "awaitingAddress",
         orderType: "delivery",
+        selectedZone: undefined, // Sin zona = sin costo de envío
       });
 
       await sendMessage(
@@ -755,11 +759,43 @@ const handleDeliveryFlow = async (
       );
     }
   } catch (error) {
-    logger.error("Error al obtener zonas de delivery", error);
+    logger.error(`Error al obtener zonas de delivery para ${tenant.name}:`, error);
+    
+    // Si hay error de índice, informar al usuario y reintentar sin filtrar
+    try {
+      // Intentar obtener todas las zonas sin filtrar por isActive
+      const allZones = await listDeliveryZones(state.tenantId);
+      const activeZones = allZones.filter(z => z.isActive !== false);
+      
+      if (activeZones.length > 0) {
+        setConversationState(phoneNumber, {
+          ...state,
+          step: "selectingDeliveryZone",
+          orderType: "delivery",
+        });
+
+        const zonesList = activeZones.map(
+          (zone, index) =>
+            `*${index + 1}.* ${zone.name} - ${formatPrice(zone.price)}`,
+        );
+
+        await sendMessage(
+          phoneNumber,
+          `🚗 *Seleccioná tu zona de delivery:*\n\n${zonesList.join("\n")}\n\nEscribe el *número* de tu zona.`,
+          tenant,
+        );
+        return;
+      }
+    } catch (fallbackError) {
+      logger.error("Error en fallback de zonas:", fallbackError);
+    }
+
+    // Si todo falló, continuar sin zona
     setConversationState(phoneNumber, {
       ...state,
       step: "awaitingAddress",
       orderType: "delivery",
+      selectedZone: undefined,
     });
 
     await sendMessage(
@@ -902,7 +938,7 @@ const handleDeliveryNotesInput = async (
     return;
   }
 
-  const deliveryCost = state.selectedZone?.price ?? 500;
+  const deliveryCost = state.selectedZone?.price ?? 0;
 
   setConversationState(phoneNumber, {
     ...state,
@@ -965,7 +1001,7 @@ const handlePaymentSelection = async (
 
   const subtotal = calculateSubtotal(state.cart);
   const deliveryCost =
-    state.orderType === "delivery" ? (state.selectedZone?.price ?? 500) : 0;
+    state.orderType === "delivery" ? (state.selectedZone?.price ?? 0) : 0;
   const total = subtotal + deliveryCost;
 
   const paymentText =
@@ -1176,7 +1212,7 @@ const handleOrderConfirmation = async (
     });
 
     const deliveryCost =
-      state.orderType === "delivery" ? (state.selectedZone?.price ?? 500) : 0;
+      state.orderType === "delivery" ? (state.selectedZone?.price ?? 0) : 0;
 
     const orderInput: CreateOrderInput = {
       tenantId: state.tenantId,
