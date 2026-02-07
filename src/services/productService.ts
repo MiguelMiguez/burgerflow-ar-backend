@@ -28,10 +28,14 @@ const getDocumentRef = (tenantId: string, id: string): DocumentReference => {
   return getCollection(tenantId).doc(id);
 };
 
-const mapSnapshotToProduct = (doc: QueryDocumentSnapshot): Product => ({
-  id: doc.id,
-  ...(doc.data() as ProductDocument),
-});
+const mapSnapshotToProduct = (doc: QueryDocumentSnapshot): Product => {
+  const data = doc.data() as ProductDocument;
+  return {
+    id: doc.id,
+    ...data,
+    compatibleExtras: data.compatibleExtras ?? [],
+  };
+};
 
 export const listProducts = async (tenantId: string): Promise<Product[]> => {
   const snapshot = await getCollection(tenantId).orderBy("name").get();
@@ -71,9 +75,11 @@ export const getProductById = async (
     throw new HttpError(404, "El producto solicitado no existe.");
   }
 
+  const data = doc.data() as ProductDocument;
   return {
     id: doc.id,
-    ...(doc.data() as ProductDocument),
+    ...data,
+    compatibleExtras: data.compatibleExtras ?? [],
   };
 };
 
@@ -93,6 +99,7 @@ export const createProduct = async (
     stock: payload.stock ?? 0,
     unit: payload.unit ?? "unidades",
     available: payload.available ?? true,
+    compatibleExtras: payload.compatibleExtras ?? [],
     createdAt: new Date().toISOString(),
   };
 
@@ -122,10 +129,12 @@ export const updateProduct = async (
 
   await docRef.update({ ...payload });
   const updatedDoc = await docRef.get();
+  const data = updatedDoc.data() as ProductDocument;
 
   return {
     id: updatedDoc.id,
-    ...(updatedDoc.data() as ProductDocument),
+    ...data,
+    compatibleExtras: data.compatibleExtras ?? [],
   };
 };
 
@@ -159,8 +168,10 @@ export const toggleProductAvailability = async (
   await docRef.update({ available: !currentData.available });
 
   const updatedDoc = await docRef.get();
+  const data = updatedDoc.data() as ProductDocument;
   return {
     id: updatedDoc.id,
-    ...(updatedDoc.data() as ProductDocument),
+    ...data,
+    compatibleExtras: data.compatibleExtras ?? [],
   };
 };

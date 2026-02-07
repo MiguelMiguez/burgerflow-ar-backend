@@ -71,6 +71,22 @@ const sanitizeProductPayload = (
     normalized.ingredients = payload.ingredients;
   }
 
+  if (payload.compatibleExtras !== undefined) {
+    normalized.compatibleExtras = payload.compatibleExtras;
+  }
+
+  if (payload.stock !== undefined) {
+    const stock = Number(payload.stock);
+    if (!Number.isFinite(stock) || stock < 0) {
+      throw new HttpError(400, "El stock debe ser un número mayor o igual a 0.");
+    }
+    normalized.stock = stock;
+  }
+
+  if (payload.unit !== undefined) {
+    normalized.unit = payload.unit;
+  }
+
   if (payload.available !== undefined) {
     normalized.available = payload.available;
   }
@@ -174,7 +190,11 @@ export const handleUpdateProduct = async (
       throw new HttpError(400, "Se requiere el id del producto.");
     }
 
+    logger.info(`Actualizando producto ${id}, payload: compatibleExtras=${JSON.stringify(req.body.compatibleExtras)}, fields=${Object.keys(req.body).join(",")}`);
+
     const sanitized = sanitizeProductPayload(req.body);
+
+    logger.info(`Payload sanitizado: compatibleExtras=${JSON.stringify(sanitized.compatibleExtras)}, fields=${Object.keys(sanitized).join(",")}`);
 
     if (Object.keys(sanitized).length === 0) {
       throw new HttpError(

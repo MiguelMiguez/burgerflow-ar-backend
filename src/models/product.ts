@@ -26,6 +26,7 @@ export interface CreateProductInput {
   image?: string;
   category: ProductCategory;
   ingredients: ProductIngredient[];
+  compatibleExtras?: string[]; // IDs de extras compatibles con este producto
   stock?: number; // Stock del producto finalizado (unidades disponibles)
   unit?: ProductUnit; // Tipo de medida del stock
   available?: boolean;
@@ -38,6 +39,7 @@ export interface UpdateProductInput {
   image?: string;
   category?: ProductCategory;
   ingredients?: ProductIngredient[];
+  compatibleExtras?: string[]; // IDs de extras compatibles con este producto
   stock?: number;
   unit?: ProductUnit;
   available?: boolean;
@@ -48,5 +50,6 @@ export interface Product extends Omit<CreateProductInput, "available" | "stock" 
   stock: number;
   unit: ProductUnit;
   available: boolean;
+  compatibleExtras: string[]; // IDs de extras compatibles
   createdAt: string;
 }
