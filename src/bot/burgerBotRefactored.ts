@@ -585,12 +585,6 @@ const handleCustomizationSelection = async (
     return;
   }
 
-  // Opción 3 desde el menú de tipo de personalización
-  if (normalized === "3") {
-    await askForMoreProducts(phoneNumber, state, tenant);
-    return;
-  }
-
   const optionIndex = parseInt(text, 10) - 1;
 
   if (!state.currentProduct) {
@@ -600,20 +594,8 @@ const handleCustomizationSelection = async (
 
   // Filtrar según el tipo de personalización seleccionado
   const customizationType = state.customizationType || "quitar";
-  
-  // Obtener las customizaciones ya hechas del último item del carrito
-  const lastItem = state.cart[state.cart.length - 1];
-  const alreadyCustomized = lastItem?.customizations
-    .filter((c) => c.type === customizationType)
-    .map((c) => c.ingredientId) || [];
-  
-  // Filtrar ingredientes disponibles (excluyendo los ya personalizados)
-  const allAvailableCustomizations = state.currentProduct.ingredients.filter(
+  const availableCustomizations = state.currentProduct.ingredients.filter(
     (ing) => customizationType === "agregar" ? ing.isExtra : ing.isRemovable,
-  );
-  
-  const availableCustomizations = allAvailableCustomizations.filter(
-    (ing) => !alreadyCustomized.includes(ing.ingredientId),
   );
 
   if (
@@ -638,14 +620,14 @@ const handleCustomizationSelection = async (
   };
 
   const updatedCart = [...state.cart];
-  const updatedLastItem = updatedCart[updatedCart.length - 1];
-  if (updatedLastItem) {
+  const lastItem = updatedCart[updatedCart.length - 1];
+  if (lastItem) {
     // Verificar que no se agregue la misma personalización dos veces
-    const alreadyExists = updatedLastItem.customizations.some(
+    const alreadyExists = lastItem.customizations.some(
       (c) => c.ingredientId === customization.ingredientId && c.type === customization.type,
     );
     if (!alreadyExists) {
-      updatedLastItem.customizations.push(customization);
+      lastItem.customizations.push(customization);
     }
   }
 
@@ -656,45 +638,11 @@ const handleCustomizationSelection = async (
 
   const action = customization.type === "agregar" ? "✅ Agregaste" : "❌ Quitaste";
   const priceInfo = customization.extraPrice > 0 ? ` (+${formatPrice(customization.extraPrice)})` : "";
-  
-  // Recalcular ingredientes restantes después de agregar este
-  const remainingCustomizations = availableCustomizations.filter(
-    (ing) => ing.ingredientId !== selectedIngredient.ingredientId,
+  await sendMessage(
+    phoneNumber,
+    `${action} *${customization.ingredientName}*${priceInfo}\n\nEscribe otro número para más cambios o *listo* para continuar.`,
+    tenant,
   );
-  
-  if (remainingCustomizations.length > 0) {
-    // Mostrar la lista actualizada de ingredientes
-    const ingredientsList = remainingCustomizations.map((ing, index) => {
-      const price = ing.extraPrice && ing.extraPrice > 0 ? ` (+${formatPrice(ing.extraPrice)})` : "";
-      return `*${index + 1}.* ${ing.ingredientName}${price}`;
-    });
-    
-    const actionText = customizationType === "agregar" ? "agregar" : "quitar";
-    await sendMessage(
-      phoneNumber,
-      `${action} *${customization.ingredientName}*${priceInfo}\n\n` +
-      `Ingredientes disponibles para ${actionText}:\n\n${ingredientsList.join("\n")}\n\n` +
-      `Escribe el *número* para ${actionText} otro ingrediente o *listo* para continuar.`,
-      tenant,
-    );
-  } else {
-    // No quedan más ingredientes disponibles
-    await sendMessage(
-      phoneNumber,
-      `${action} *${customization.ingredientName}*${priceInfo}\n\n` +
-      `No quedan más ingredientes para ${customizationType}.\n\n` +
-      `¿Deseas hacer otra personalización?\n\n` +
-      `*1.* ➕ Agregar ingredientes\n*2.* ➖ Quitar ingredientes\n*3.* Continuar con el pedido`,
-      tenant,
-    );
-    
-    setConversationState(phoneNumber, {
-      ...state,
-      cart: updatedCart,
-      step: "selectingCustomizationType",
-      customizationType: undefined,
-    });
-  }
 };
 
 const askForMoreProducts = async (
