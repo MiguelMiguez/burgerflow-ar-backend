@@ -722,7 +722,7 @@ const handleDeliveryFlow = async (
   tenant: Tenant,
 ): Promise<void> => {
   try {
-    const zones = await listActiveDeliveryZones(state.tenantId);
+    const zones = await getActiveZonesWithFallback(state.tenantId);
     logger.info(`Zonas de delivery encontradas para ${tenant.name}: ${zones.length}`);
 
     if (zones.length > 0) {
@@ -761,35 +761,6 @@ const handleDeliveryFlow = async (
   } catch (error) {
     logger.error(`Error al obtener zonas de delivery para ${tenant.name}:`, error);
     
-    // Si hay error de índice, informar al usuario y reintentar sin filtrar
-    try {
-      // Intentar obtener todas las zonas sin filtrar por isActive
-      const allZones = await listDeliveryZones(state.tenantId);
-      const activeZones = allZones.filter(z => z.isActive !== false);
-      
-      if (activeZones.length > 0) {
-        setConversationState(phoneNumber, {
-          ...state,
-          step: "selectingDeliveryZone",
-          orderType: "delivery",
-        });
-
-        const zonesList = activeZones.map(
-          (zone, index) =>
-            `*${index + 1}.* ${zone.name} - ${formatPrice(zone.price)}`,
-        );
-
-        await sendMessage(
-          phoneNumber,
-          `🚗 *Seleccioná tu zona de delivery:*\n\n${zonesList.join("\n")}\n\nEscribe el *número* de tu zona.`,
-          tenant,
-        );
-        return;
-      }
-    } catch (fallbackError) {
-      logger.error("Error en fallback de zonas:", fallbackError);
-    }
-
     // Si todo falló, continuar sin zona
     setConversationState(phoneNumber, {
       ...state,
@@ -845,6 +816,16 @@ const handleOrderTypeSelection = async (
   }
 };
 
+const getActiveZonesWithFallback = async (tenantId: string): Promise<DeliveryZone[]> => {
+  try {
+    return await listActiveDeliveryZones(tenantId);
+  } catch (error) {
+    logger.warn("listActiveDeliveryZones falló, usando fallback con listDeliveryZones");
+    const allZones = await listDeliveryZones(tenantId);
+    return allZones.filter(z => z.isActive !== false);
+  }
+};
+
 const handleDeliveryZoneSelection = async (
   phoneNumber: string,
   text: string,
@@ -854,7 +835,7 @@ const handleDeliveryZoneSelection = async (
   const zoneIndex = parseInt(text, 10) - 1;
 
   try {
-    const zones = await listActiveDeliveryZones(state.tenantId);
+    const zones = await getActiveZonesWithFallback(state.tenantId);
 
     if (isNaN(zoneIndex) || zoneIndex < 0 || zoneIndex >= zones.length) {
       await sendMessage(
