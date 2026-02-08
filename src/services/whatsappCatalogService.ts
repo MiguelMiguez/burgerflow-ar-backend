@@ -5,8 +5,8 @@ import type { Tenant } from "../models/tenant";
 import type { Product } from "../models/product";
 
 /**
- * Servicio para interactuar con el Catálogo de WhatsApp Business (Meta Graph API)
- * Documentación: https://developers.facebook.com/docs/marketing-api/catalog
+ * Servicio para interactuar con el Catálogo de WhatsApp Business (Meta Commerce API)
+ * Documentación: https://developers.facebook.com/docs/commerce-platform/catalog/batch-api
  *
  * Este servicio permite sincronizar productos del sistema con el catálogo
  * de WhatsApp Business, permitiendo a los clientes navegar y ordenar
@@ -23,25 +23,38 @@ interface MetaErrorResponse {
   };
 }
 
-interface CatalogProductPayload {
-  retailer_id: string; // ID único del producto en tu sistema
-  name: string;
-  description?: string;
-  price: number; // Precio en centavos
-  currency: string;
+/**
+ * Formato de producto para la Commerce API de Meta
+ * Documentación: https://developers.facebook.com/docs/commerce-platform/catalog/fields
+ */
+interface CatalogProductData {
+  id: string; // retailer_id - ID único del producto en tu sistema
+  title: string;
+  description: string;
   availability: "in stock" | "out of stock";
-  url?: string; // URL del producto (opcional)
-  image_url?: string; // URL de la imagen del producto
-  category?: string;
+  condition: "new" | "refurbished" | "used";
+  price: string; // Formato: "1500 ARS" (valor + espacio + moneda ISO)
+  link: string; // URL del producto (requerido)
+  image_link: string; // URL de la imagen del producto (requerido)
+  brand?: string;
 }
 
-interface CatalogProductResponse {
-  id: string; // ID del producto en el catálogo de Meta
-  retailer_id: string;
+interface CatalogBatchRequest {
+  method: "CREATE" | "UPDATE" | "DELETE";
+  data: CatalogProductData | { id: string };
 }
 
-interface CatalogProductBatchResponse {
-  handles: string[];
+interface CatalogBatchPayload {
+  item_type: "PRODUCT_ITEM";
+  requests: CatalogBatchRequest[];
+}
+
+interface CatalogBatchResponse {
+  handles?: string[];
+  validation_status?: Array<{
+    retailer_id: string;
+    errors?: Array<{ message: string }>;
+  }>;
 }
 
 /**
@@ -62,82 +75,100 @@ const validateCatalogCredentials = (tenant: Tenant): void => {
 };
 
 /**
- * Construye la URL base para la Graph API de Meta (catálogo)
+ * Construye la URL para el endpoint items_batch de la Commerce API
  */
-const getCatalogApiUrl = (catalogId: string, endpoint: string = ""): string => {
-  return `https://graph.facebook.com/${env.metaApiVersion}/${catalogId}${endpoint}`;
+const getCatalogBatchUrl = (catalogId: string): string => {
+  return `https://graph.facebook.com/${env.metaApiVersion}/${catalogId}/items_batch`;
 };
 
 /**
- * Maneja errores de axios para operaciones de catálogo
+ * Convierte un producto del sistema al formato requerido por la Commerce API de Meta
  */
-const handleCatalogApiError = (error: unknown, context: string): never => {
-  if (axios.isAxiosError(error)) {
-    const axiosError = error as AxiosError<MetaErrorResponse>;
+const productToCatalogData = (product: Product, tenant: Tenant): CatalogProductData => {
+  // La Commerce API requiere el precio en formato "VALOR MONEDA" (ej: "1500 ARS")
+  const priceFormatted = `${Math.round(product.price)} ARS`;
 
-    if (axiosError.response) {
-      const status = axiosError.response.status;
-      const metaError = axiosError.response.data?.error;
+  // URL del producto - usar la URL del local o una URL genérica
+  const productUrl = tenant.address 
+    ? `https://maps.google.com/?q=${encodeURIComponent(tenant.address)}`
+    : `https://wa.me/${tenant.whatsappNumber || tenant.phone || ""}`;
 
-      if (metaError) {
-        const errorMsg = `Meta Catalog API Error (${status}): ${metaError.message} [${metaError.type}]`;
-        logger.error(errorMsg, {
-          code: metaError.code,
-          subcode: metaError.error_subcode,
-          traceId: metaError.fbtrace_id,
-        });
-        throw new Error(errorMsg);
-      }
-
-      logger.error(
-        `Meta Catalog API HTTP Error (${status}): ${axiosError.message}`,
-        axiosError,
-      );
-      throw new Error(
-        `Error de comunicación con WhatsApp Catalog API (${status}): ${axiosError.message}`,
-      );
-    }
-
-    if (axiosError.request) {
-      logger.error(
-        `Meta Catalog API Request Error: ${axiosError.message}`,
-        axiosError,
-      );
-      throw new Error(
-        `No se pudo conectar con WhatsApp Catalog API: ${axiosError.message}`,
-      );
-    }
-
-    logger.error(
-      `Meta Catalog API Config Error: ${axiosError.message}`,
-      axiosError,
-    );
-    throw new Error(`Error de configuración: ${axiosError.message}`);
-  }
-
-  logger.error(`${context}: Error desconocido`, error);
-  throw new Error(`Error inesperado en ${context}`);
-};
-
-/**
- * Convierte un producto del sistema al formato requerido por el catálogo de WhatsApp
- */
-const productToCatalogPayload = (product: Product): CatalogProductPayload => {
-  // WhatsApp requiere el precio en centavos (multiplicar por 100)
-  const priceInCents = Math.round(product.price * 100);
+  // URL de la imagen - si no hay, usar una imagen placeholder
+  const imageUrl = product.image || "https://placehold.co/600x400/f97316/white?text=Hamburguesa";
 
   return {
-    retailer_id: product.id,
-    name: product.name.substring(0, 200), // WhatsApp limita a 200 caracteres
-    description:
-      product.description?.substring(0, 9999) ||
-      `${product.name} - ${product.category}`,
-    price: priceInCents,
-    currency: "ARS", // Peso argentino
+    id: product.id,
+    title: product.name.substring(0, 200), // Meta limita a 200 caracteres
+    description: product.description?.substring(0, 9999) || `${product.name} - ${product.category}`,
     availability: product.available ? "in stock" : "out of stock",
-    image_url: product.image || undefined,
-    category: product.category,
+    condition: "new",
+    price: priceFormatted,
+    link: productUrl,
+    image_link: imageUrl,
+    brand: tenant.name,
   };
+};
+
+/**
+ * Ejecuta una operación batch en el catálogo de Meta
+ */
+const executeCatalogBatch = async (
+  tenant: Tenant,
+  requests: CatalogBatchRequest[],
+  context: string,
+): Promise<boolean> => {
+  try {
+    validateCatalogCredentials(tenant);
+
+    const url = getCatalogBatchUrl(tenant.metaCatalogId!);
+    const payload: CatalogBatchPayload = {
+      item_type: "PRODUCT_ITEM",
+      requests,
+    };
+
+    logger.info(`${context} - Enviando batch de ${requests.length} producto(s) al catálogo`);
+    logger.debug(`Payload: ${JSON.stringify(payload, null, 2)}`);
+
+    const response = await axios.post<CatalogBatchResponse>(url, payload, {
+      headers: {
+        Authorization: `Bearer ${tenant.metaAccessToken}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 30000,
+    });
+
+    logger.info(`${context} - Batch ejecutado exitosamente`);
+    logger.debug(`Response: ${JSON.stringify(response.data)}`);
+
+    // Verificar si hay errores de validación
+    if (response.data.validation_status) {
+      const errors = response.data.validation_status.filter(
+        (item) => item.errors && item.errors.length > 0,
+      );
+      if (errors.length > 0) {
+        logger.warn(`${context} - Algunos productos tuvieron errores de validación:`, errors);
+      }
+    }
+
+    return true;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      const axiosError = error as AxiosError<MetaErrorResponse>;
+      const status = axiosError.response?.status;
+      const metaError = axiosError.response?.data?.error;
+      const responseData = axiosError.response?.data;
+
+      logger.error(`${context} - Error ${status}:`, {
+        message: metaError?.message || axiosError.message,
+        type: metaError?.type,
+        code: metaError?.code,
+        responseData: JSON.stringify(responseData),
+      });
+    } else {
+      logger.error(`${context} - Error desconocido:`, error);
+    }
+    return false;
+  }
 };
 
 /**
@@ -145,51 +176,28 @@ const productToCatalogPayload = (product: Product): CatalogProductPayload => {
  *
  * @param product - Producto a agregar
  * @param tenant - Tenant con credenciales de Meta
- * @returns ID del producto en el catálogo de Meta
+ * @returns true si se agregó exitosamente
  */
 export const addProductToCatalog = async (
   product: Product,
   tenant: Tenant,
 ): Promise<string | null> => {
   try {
-    validateCatalogCredentials(tenant);
+    const catalogData = productToCatalogData(product, tenant);
 
-    const catalogPayload = productToCatalogPayload(product);
-    const url = getCatalogApiUrl(tenant.metaCatalogId!, "/products");
-
-    logger.info(
-      `Agregando producto "${product.name}" (${product.id}) al catálogo de WhatsApp (tenant: ${tenant.name})`,
-    );
-
-    const response = await axios.post<CatalogProductResponse>(
-      url,
-      {
-        requests: [
-          {
-            method: "CREATE",
-            retailer_id: catalogPayload.retailer_id,
-            data: catalogPayload,
-          },
-        ],
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${tenant.metaAccessToken}`,
-          "Content-Type": "application/json",
+    const success = await executeCatalogBatch(
+      tenant,
+      [
+        {
+          method: "CREATE",
+          data: catalogData,
         },
-        timeout: 30000,
-      },
+      ],
+      `Agregar producto "${product.name}" (${product.id})`,
     );
 
-    const catalogItemId = response.data.id;
-
-    logger.info(
-      `Producto "${product.name}" agregado al catálogo. Meta ID: ${catalogItemId}`,
-    );
-
-    return catalogItemId;
+    return success ? product.id : null;
   } catch (error) {
-    // No fallar la operación principal si falla la sincronización con el catálogo
     logger.error(
       `Error al agregar producto "${product.name}" al catálogo de WhatsApp`,
       error,
@@ -210,37 +218,18 @@ export const updateProductInCatalog = async (
   tenant: Tenant,
 ): Promise<boolean> => {
   try {
-    validateCatalogCredentials(tenant);
+    const catalogData = productToCatalogData(product, tenant);
 
-    const catalogPayload = productToCatalogPayload(product);
-    const url = getCatalogApiUrl(tenant.metaCatalogId!, "/products");
-
-    logger.info(
-      `Actualizando producto "${product.name}" (${product.id}) en el catálogo de WhatsApp (tenant: ${tenant.name})`,
-    );
-
-    await axios.post(
-      url,
-      {
-        requests: [
-          {
-            method: "UPDATE",
-            retailer_id: catalogPayload.retailer_id,
-            data: catalogPayload,
-          },
-        ],
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${tenant.metaAccessToken}`,
-          "Content-Type": "application/json",
+    return await executeCatalogBatch(
+      tenant,
+      [
+        {
+          method: "UPDATE",
+          data: catalogData,
         },
-        timeout: 30000,
-      },
+      ],
+      `Actualizar producto "${product.name}" (${product.id})`,
     );
-
-    logger.info(`Producto "${product.name}" actualizado en el catálogo`);
-    return true;
   } catch (error) {
     logger.error(
       `Error al actualizar producto "${product.name}" en el catálogo de WhatsApp`,
@@ -262,35 +251,16 @@ export const removeProductFromCatalog = async (
   tenant: Tenant,
 ): Promise<boolean> => {
   try {
-    validateCatalogCredentials(tenant);
-
-    const url = getCatalogApiUrl(tenant.metaCatalogId!, "/products");
-
-    logger.info(
-      `Eliminando producto ${productId} del catálogo de WhatsApp (tenant: ${tenant.name})`,
-    );
-
-    await axios.post(
-      url,
-      {
-        requests: [
-          {
-            method: "DELETE",
-            retailer_id: productId,
-          },
-        ],
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${tenant.metaAccessToken}`,
-          "Content-Type": "application/json",
+    return await executeCatalogBatch(
+      tenant,
+      [
+        {
+          method: "DELETE",
+          data: { id: productId },
         },
-        timeout: 30000,
-      },
+      ],
+      `Eliminar producto ${productId}`,
     );
-
-    logger.info(`Producto ${productId} eliminado del catálogo`);
-    return true;
   } catch (error) {
     logger.error(
       `Error al eliminar producto ${productId} del catálogo de WhatsApp`,
@@ -320,48 +290,32 @@ export const syncProductsToCatalog = async (
       return 0;
     }
 
-    const url = getCatalogApiUrl(tenant.metaCatalogId!, "/batch");
-
     logger.info(
       `Sincronizando ${products.length} productos con el catálogo de WhatsApp (tenant: ${tenant.name})`,
     );
 
-    // WhatsApp permite hasta 10,000 productos por batch
-    // Dividimos en chunks de 1000 para evitar timeouts
-    const chunkSize = 1000;
+    // Meta permite hasta 5,000 items por batch request
+    // Dividimos en chunks de 500 para ser conservadores
+    const chunkSize = 500;
     let successCount = 0;
 
     for (let i = 0; i < products.length; i += chunkSize) {
       const chunk = products.slice(i, i + chunkSize);
-      const requests = chunk.map((product) => {
-        const payload = productToCatalogPayload(product);
-        return {
-          method: "UPDATE", // UPDATE crea si no existe (upsert)
-          retailer_id: payload.retailer_id,
-          data: payload,
-        };
-      });
+      const requests: CatalogBatchRequest[] = chunk.map((product) => ({
+        method: "UPDATE" as const, // UPDATE hace upsert (crea si no existe)
+        data: productToCatalogData(product, tenant),
+      }));
 
-      try {
-        await axios.post<CatalogProductBatchResponse>(
-          url,
-          { requests },
-          {
-            headers: {
-              Authorization: `Bearer ${tenant.metaAccessToken}`,
-              "Content-Type": "application/json",
-            },
-            timeout: 60000, // 60 segundos para batch operations
-          },
-        );
+      const success = await executeCatalogBatch(
+        tenant,
+        requests,
+        `Sync chunk ${Math.floor(i / chunkSize) + 1}`,
+      );
+
+      if (success) {
         successCount += chunk.length;
         logger.info(
           `Chunk ${Math.floor(i / chunkSize) + 1} sincronizado (${chunk.length} productos)`,
-        );
-      } catch (chunkError) {
-        logger.error(
-          `Error al sincronizar chunk ${Math.floor(i / chunkSize) + 1}`,
-          chunkError,
         );
       }
     }
@@ -400,38 +354,25 @@ export const updateProductAvailabilityInCatalog = async (
   try {
     validateCatalogCredentials(tenant);
 
-    const url = getCatalogApiUrl(tenant.metaCatalogId!, "/products");
-
     logger.info(
       `Actualizando disponibilidad del producto ${productId} a "${available ? "in stock" : "out of stock"}" (tenant: ${tenant.name})`,
     );
 
-    await axios.post(
-      url,
-      {
-        requests: [
-          {
-            method: "UPDATE",
-            retailer_id: productId,
-            data: {
-              availability: available ? "in stock" : "out of stock",
-            },
-          },
-        ],
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${tenant.metaAccessToken}`,
-          "Content-Type": "application/json",
+    // Para actualizar solo la disponibilidad, aún necesitamos enviar los campos requeridos
+    // Por eso hacemos un UPDATE parcial
+    return await executeCatalogBatch(
+      tenant,
+      [
+        {
+          method: "UPDATE",
+          data: {
+            id: productId,
+            availability: available ? "in stock" : "out of stock",
+          } as CatalogProductData,
         },
-        timeout: 15000,
-      },
+      ],
+      `Actualizar disponibilidad ${productId}`,
     );
-
-    logger.info(
-      `Disponibilidad del producto ${productId} actualizada en el catálogo`,
-    );
-    return true;
   } catch (error) {
     logger.error(
       `Error al actualizar disponibilidad del producto ${productId} en el catálogo`,
