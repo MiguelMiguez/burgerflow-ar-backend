@@ -4,12 +4,16 @@ import {
   handleDeleteProduct,
   handleGetProduct,
   handleListProducts,
+  handleSyncCatalog,
   handleToggleProductAvailability,
   handleUpdateProduct,
 } from "../controllers/productController";
 import { authorize } from "../middlewares/authorize";
 
 const router = Router();
+
+// Sincronizar productos con catálogo de WhatsApp (debe ir antes de /:id)
+router.post("/sync-catalog", authorize("admin"), handleSyncCatalog);
 
 // Listar productos (con filtros opcionales: ?available=true&category=simple)
 router.get("/", authorize("admin", "user"), handleListProducts);

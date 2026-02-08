@@ -10,6 +10,15 @@ import {
   ProductCategory,
 } from "../models/product";
 import { HttpError } from "../utils/httpError";
+import { getTenantById } from "./tenantService";
+import {
+  addProductToCatalog,
+  updateProductInCatalog,
+  removeProductFromCatalog,
+  updateProductAvailabilityInCatalog,
+  hasCatalogConfigured,
+} from "./whatsappCatalogService";
+import { logger } from "../utils/logger";
 
 const PRODUCTS_COLLECTION = "products";
 
@@ -105,10 +114,29 @@ export const createProduct = async (
 
   const docRef = await getCollection(payload.tenantId).add(document);
 
-  return {
+  const product: Product = {
     id: docRef.id,
     ...document,
   };
+
+  // Sincronizar con el catálogo de WhatsApp si está configurado
+  try {
+    const tenant = await getTenantById(payload.tenantId);
+    if (hasCatalogConfigured(tenant)) {
+      await addProductToCatalog(product, tenant);
+      logger.info(
+        `Producto ${product.id} sincronizado con catálogo de WhatsApp`,
+      );
+    }
+  } catch (catalogError) {
+    // No fallar la creación del producto si falla la sincronización
+    logger.warn(
+      `No se pudo sincronizar producto ${product.id} con catálogo de WhatsApp`,
+      catalogError,
+    );
+  }
+
+  return product;
 };
 
 export const updateProduct = async (
@@ -131,11 +159,27 @@ export const updateProduct = async (
   const updatedDoc = await docRef.get();
   const data = updatedDoc.data() as ProductDocument;
 
-  return {
+  const product: Product = {
     id: updatedDoc.id,
     ...data,
     compatibleExtras: data.compatibleExtras ?? [],
   };
+
+  // Sincronizar con el catálogo de WhatsApp si está configurado
+  try {
+    const tenant = await getTenantById(tenantId);
+    if (hasCatalogConfigured(tenant)) {
+      await updateProductInCatalog(product, tenant);
+      logger.info(`Producto ${product.id} actualizado en catálogo de WhatsApp`);
+    }
+  } catch (catalogError) {
+    logger.warn(
+      `No se pudo actualizar producto ${product.id} en catálogo de WhatsApp`,
+      catalogError,
+    );
+  }
+
+  return product;
 };
 
 export const deleteProduct = async (
@@ -151,6 +195,22 @@ export const deleteProduct = async (
 
   // Soft delete - just mark as unavailable
   await docRef.update({ available: false });
+
+  // Actualizar disponibilidad en el catálogo de WhatsApp
+  try {
+    const tenant = await getTenantById(tenantId);
+    if (hasCatalogConfigured(tenant)) {
+      await updateProductAvailabilityInCatalog(id, false, tenant);
+      logger.info(
+        `Producto ${id} marcado como no disponible en catálogo de WhatsApp`,
+      );
+    }
+  } catch (catalogError) {
+    logger.warn(
+      `No se pudo actualizar disponibilidad del producto ${id} en catálogo de WhatsApp`,
+      catalogError,
+    );
+  }
 };
 
 export const toggleProductAvailability = async (
@@ -165,13 +225,33 @@ export const toggleProductAvailability = async (
   }
 
   const currentData = doc.data() as ProductDocument;
-  await docRef.update({ available: !currentData.available });
+  const newAvailability = !currentData.available;
+  await docRef.update({ available: newAvailability });
 
   const updatedDoc = await docRef.get();
   const data = updatedDoc.data() as ProductDocument;
-  return {
+
+  const product: Product = {
     id: updatedDoc.id,
     ...data,
     compatibleExtras: data.compatibleExtras ?? [],
   };
+
+  // Actualizar disponibilidad en el catálogo de WhatsApp
+  try {
+    const tenant = await getTenantById(tenantId);
+    if (hasCatalogConfigured(tenant)) {
+      await updateProductAvailabilityInCatalog(id, newAvailability, tenant);
+      logger.info(
+        `Disponibilidad del producto ${id} actualizada en catálogo de WhatsApp: ${newAvailability}`,
+      );
+    }
+  } catch (catalogError) {
+    logger.warn(
+      `No se pudo actualizar disponibilidad del producto ${id} en catálogo de WhatsApp`,
+      catalogError,
+    );
+  }
+
+  return product;
 };

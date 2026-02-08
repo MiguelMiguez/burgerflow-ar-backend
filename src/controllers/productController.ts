@@ -16,13 +16,18 @@ import {
 } from "../models/product";
 import { HttpError } from "../utils/httpError";
 import { logger } from "../utils/logger";
+import { getTenantById } from "../services/tenantService";
+import {
+  syncProductsToCatalog,
+  hasCatalogConfigured,
+} from "../services/whatsappCatalogService";
 
 const getTenantId = (req: Request): string => {
   // Priorizar tenantId del usuario autenticado con Firebase
   if (req.user?.tenantId) {
     return req.user.tenantId;
   }
-  
+
   // Fallback: buscar en params o headers (legacy)
   const tenantId = req.params.tenantId || req.headers["x-tenant-id"];
   if (!tenantId || typeof tenantId !== "string") {
@@ -78,7 +83,10 @@ const sanitizeProductPayload = (
   if (payload.stock !== undefined) {
     const stock = Number(payload.stock);
     if (!Number.isFinite(stock) || stock < 0) {
-      throw new HttpError(400, "El stock debe ser un número mayor o igual a 0.");
+      throw new HttpError(
+        400,
+        "El stock debe ser un número mayor o igual a 0.",
+      );
     }
     normalized.stock = stock;
   }
@@ -190,11 +198,15 @@ export const handleUpdateProduct = async (
       throw new HttpError(400, "Se requiere el id del producto.");
     }
 
-    logger.info(`Actualizando producto ${id}, payload: compatibleExtras=${JSON.stringify(req.body.compatibleExtras)}, fields=${Object.keys(req.body).join(",")}`);
+    logger.info(
+      `Actualizando producto ${id}, payload: compatibleExtras=${JSON.stringify(req.body.compatibleExtras)}, fields=${Object.keys(req.body).join(",")}`,
+    );
 
     const sanitized = sanitizeProductPayload(req.body);
 
-    logger.info(`Payload sanitizado: compatibleExtras=${JSON.stringify(sanitized.compatibleExtras)}, fields=${Object.keys(sanitized).join(",")}`);
+    logger.info(
+      `Payload sanitizado: compatibleExtras=${JSON.stringify(sanitized.compatibleExtras)}, fields=${Object.keys(sanitized).join(",")}`,
+    );
 
     if (Object.keys(sanitized).length === 0) {
       throw new HttpError(
@@ -254,6 +266,56 @@ export const handleToggleProductAvailability = async (
       `Producto ${product.available ? "activado" : "desactivado"}: ${product.name}`,
     );
     res.json(product);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Sincroniza todos los productos del tenant con el catálogo de WhatsApp
+ * POST /products/sync-catalog
+ */
+export const handleSyncCatalog = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const tenantId = getTenantId(req);
+
+    // Verificar que el tenant tenga configurado el catálogo
+    const tenant = await getTenantById(tenantId);
+    if (!hasCatalogConfigured(tenant)) {
+      throw new HttpError(
+        400,
+        "El tenant no tiene configurado el catálogo de WhatsApp. Configure metaCatalogId y metaAccessToken.",
+      );
+    }
+
+    // Obtener todos los productos disponibles
+    const products = await listAvailableProducts(tenantId);
+
+    if (products.length === 0) {
+      res.json({
+        message: "No hay productos disponibles para sincronizar.",
+        synced: 0,
+        total: 0,
+      });
+      return;
+    }
+
+    // Sincronizar con el catálogo
+    const syncedCount = await syncProductsToCatalog(products, tenant);
+
+    logger.info(
+      `Catálogo sincronizado para tenant ${tenantId}: ${syncedCount}/${products.length} productos`,
+    );
+
+    res.json({
+      message: "Sincronización completada.",
+      synced: syncedCount,
+      total: products.length,
+    });
   } catch (error) {
     next(error);
   }

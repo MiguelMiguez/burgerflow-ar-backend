@@ -30,6 +30,7 @@ export interface CreateProductInput {
   stock?: number; // Stock del producto finalizado (unidades disponibles)
   unit?: ProductUnit; // Tipo de medida del stock
   available?: boolean;
+  metaCatalogItemId?: string; // ID del producto en el catálogo de WhatsApp
 }
 
 export interface UpdateProductInput {
@@ -43,13 +44,18 @@ export interface UpdateProductInput {
   stock?: number;
   unit?: ProductUnit;
   available?: boolean;
+  metaCatalogItemId?: string; // ID del producto en el catálogo de WhatsApp
 }
 
-export interface Product extends Omit<CreateProductInput, "available" | "stock" | "unit"> {
+export interface Product extends Omit<
+  CreateProductInput,
+  "available" | "stock" | "unit"
+> {
   id: string;
   stock: number;
   unit: ProductUnit;
   available: boolean;
   compatibleExtras: string[]; // IDs de extras compatibles
+  metaCatalogItemId?: string; // ID del producto en el catálogo de WhatsApp
   createdAt: string;
 }

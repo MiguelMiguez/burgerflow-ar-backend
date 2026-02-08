@@ -458,7 +458,12 @@ const handleCustomizationQuestion = async (
 ): Promise<void> => {
   const normalized = text.trim().toLowerCase();
 
-  if (normalized === "btn_personalizar_si" || normalized === "si" || normalized === "sí" || normalized === "1") {
+  if (
+    normalized === "btn_personalizar_si" ||
+    normalized === "si" ||
+    normalized === "sí" ||
+    normalized === "1"
+  ) {
     if (!state.currentProduct) {
       await askForMoreProducts(phoneNumber, state, tenant);
       return;
@@ -497,7 +502,11 @@ const handleCustomizationQuestion = async (
       ],
       tenant,
     );
-  } else if (normalized === "btn_personalizar_no" || normalized === "no" || normalized === "2") {
+  } else if (
+    normalized === "btn_personalizar_no" ||
+    normalized === "no" ||
+    normalized === "2"
+  ) {
     await askForMoreProducts(phoneNumber, state, tenant);
   } else {
     await sendInteractiveButtons(
@@ -543,7 +552,11 @@ const handleCustomizationTypeSelection = async (
     extraPrice: number;
   }[];
 
-  if (normalized === "btn_agregar" || normalized === "1" || normalized.includes("agregar")) {
+  if (
+    normalized === "btn_agregar" ||
+    normalized === "1" ||
+    normalized.includes("agregar")
+  ) {
     customizationType = "agregar";
     ingredients = state.currentProduct.ingredients
       .filter((ing) => ing.isExtra)
@@ -552,7 +565,11 @@ const handleCustomizationTypeSelection = async (
         ingredientName: ing.ingredientName,
         extraPrice: ing.extraPrice || 0,
       }));
-  } else if (normalized === "btn_quitar" || normalized === "2" || normalized.includes("quitar")) {
+  } else if (
+    normalized === "btn_quitar" ||
+    normalized === "2" ||
+    normalized.includes("quitar")
+  ) {
     customizationType = "quitar";
     ingredients = state.currentProduct.ingredients
       .filter((ing) => ing.isRemovable)
@@ -739,7 +756,11 @@ const handleMoreProductsQuestion = async (
   const normalized = text.trim().toLowerCase();
 
   // Aceptar botón interactivo o texto
-  if (normalized === "btn_mas_productos_si" || normalized === "si" || normalized === "sí") {
+  if (
+    normalized === "btn_mas_productos_si" ||
+    normalized === "si" ||
+    normalized === "sí"
+  ) {
     await startOrderFlow(phoneNumber, tenant);
   } else {
     // Verificar si el tenant tiene delivery y/o pickup habilitados
@@ -1045,9 +1066,17 @@ const handlePaymentSelection = async (
 
   let paymentMethod: "efectivo" | "transferencia";
 
-  if (normalized === "btn_efectivo" || normalized === "1" || normalized.includes("efectivo")) {
+  if (
+    normalized === "btn_efectivo" ||
+    normalized === "1" ||
+    normalized.includes("efectivo")
+  ) {
     paymentMethod = "efectivo";
-  } else if (normalized === "btn_transferencia" || normalized === "2" || normalized.includes("transferencia")) {
+  } else if (
+    normalized === "btn_transferencia" ||
+    normalized === "2" ||
+    normalized.includes("transferencia")
+  ) {
     paymentMethod = "transferencia";
   } else {
     await sendInteractiveButtons(
@@ -1550,4 +1579,145 @@ export const processIncomingMessage = async (
       "Escribe *menu* para ver las opciones o *pedir* para hacer un pedido.",
     tenant,
   );
+};
+
+/**
+ * Interfaz para productos seleccionados del catálogo de WhatsApp
+ */
+interface CatalogOrderItem {
+  productRetailerId: string; // ID del producto en nuestro sistema
+  quantity: number;
+  itemPrice: string;
+  currency: string;
+}
+
+/**
+ * Procesa una orden del catálogo de WhatsApp
+ * Cuando un usuario selecciona productos del catálogo, esta función:
+ * 1. Busca los productos en la base de datos
+ * 2. Los agrega al carrito
+ * 3. Pregunta si desea personalizar
+ */
+export const processCatalogOrder = async (
+  orderPayload: {
+    from: string;
+    messageId: string;
+    timestamp: string;
+    contactName?: string;
+    catalogId: string;
+    productItems: CatalogOrderItem[];
+    text?: string;
+  },
+  tenant: Tenant,
+): Promise<void> => {
+  const { from: phoneNumber, productItems, contactName } = orderPayload;
+
+  logger.info(
+    `Procesando orden de catálogo de ${phoneNumber}: ${productItems.length} producto(s)`,
+  );
+
+  if (productItems.length === 0) {
+    await sendMessage(
+      phoneNumber,
+      "No se encontraron productos en tu selección. Intenta nuevamente.",
+      tenant,
+    );
+    return;
+  }
+
+  try {
+    // Obtener el estado actual de la conversación
+    const state = getConversationState(phoneNumber, tenant.id);
+    const cart: CartItem[] = [...state.cart];
+    const productsNotFound: string[] = [];
+    const productsAdded: { name: string; quantity: number }[] = [];
+
+    // Procesar cada producto del catálogo
+    for (const item of productItems) {
+      try {
+        // Buscar el producto por su ID (retailer_id es el ID del producto en nuestro sistema)
+        const product = await getProductById(tenant.id, item.productRetailerId);
+
+        if (!product.available) {
+          productsNotFound.push(item.productRetailerId);
+          continue;
+        }
+
+        // Crear item del carrito
+        const cartItem: CartItem = {
+          product,
+          quantity: item.quantity,
+          customizations: [],
+          extras: [],
+        };
+
+        cart.push(cartItem);
+        productsAdded.push({ name: product.name, quantity: item.quantity });
+
+        logger.info(
+          `Producto agregado al carrito desde catálogo: ${product.name} x${item.quantity}`,
+        );
+      } catch (error) {
+        // Producto no encontrado
+        logger.warn(
+          `Producto no encontrado en catálogo: ${item.productRetailerId}`,
+        );
+        productsNotFound.push(item.productRetailerId);
+      }
+    }
+
+    // Verificar si se agregaron productos
+    if (productsAdded.length === 0) {
+      await sendMessage(
+        phoneNumber,
+        "Lo sentimos, los productos seleccionados no están disponibles en este momento. 😔\n\n" +
+          "Escribe *hamburguesas* para ver el menú actualizado.",
+        tenant,
+      );
+      return;
+    }
+
+    // Construir mensaje de confirmación
+    let confirmMessage = "🛒 *Productos agregados al carrito:*\n\n";
+    for (const item of productsAdded) {
+      confirmMessage += `• ${item.quantity}x ${item.name}\n`;
+    }
+
+    if (productsNotFound.length > 0) {
+      confirmMessage += `\n⚠️ _${productsNotFound.length} producto(s) no estaban disponibles._\n`;
+    }
+
+    // Guardar el estado con el carrito actualizado
+    // Si hay más de un producto, preguntamos si quiere personalizar cada uno
+    const lastProduct = cart[cart.length - 1]?.product;
+
+    setConversationState(phoneNumber, {
+      ...state,
+      step: "askingCustomization",
+      cart,
+      currentProduct: lastProduct,
+      currentQuantity: cart[cart.length - 1]?.quantity,
+      customerName: contactName || state.customerName,
+    });
+
+    await sendMessage(phoneNumber, confirmMessage, tenant);
+
+    // Preguntar si desea personalizar
+    await sendInteractiveButtons(
+      phoneNumber,
+      "¿Deseas modificar algún ingrediente de tu pedido?\n(Agregar o quitar ingredientes)",
+      [
+        { id: "btn_personalizar_si", title: "✅ Sí, modificar" },
+        { id: "btn_personalizar_no", title: "❌ No, continuar" },
+      ],
+      tenant,
+    );
+  } catch (error) {
+    logger.error("Error procesando orden de catálogo", error);
+    await sendMessage(
+      phoneNumber,
+      "Hubo un error al procesar tu selección. Por favor, intenta nuevamente o escribe *pedir* para hacer tu pedido manualmente.",
+      tenant,
+    );
+  }
 };

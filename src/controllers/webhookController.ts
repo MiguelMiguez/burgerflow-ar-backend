@@ -2,7 +2,10 @@ import { Request, Response } from "express";
 import env from "../config/env";
 import { logger } from "../utils/logger";
 import { getTenantByPhoneNumberId } from "../services/tenantService";
-import { processIncomingMessage as processBurgerBotMessage } from "../bot/burgerBotRefactored";
+import {
+  processIncomingMessage as processBurgerBotMessage,
+  processCatalogOrder as processBurgerBotCatalogOrder,
+} from "../bot/burgerBotRefactored";
 import type { Tenant } from "../models/tenant";
 
 /**
@@ -26,6 +29,22 @@ interface MetaInteractiveReply {
   };
 }
 
+/**
+ * Estructura para productos del catálogo seleccionados por el usuario
+ */
+interface MetaOrderProductItem {
+  product_retailer_id: string; // ID del producto en nuestro sistema
+  quantity: number;
+  item_price: string; // Precio como string (ej: "1500.00")
+  currency: string; // Moneda (ej: "ARS")
+}
+
+interface MetaOrder {
+  catalog_id: string;
+  product_items: MetaOrderProductItem[];
+  text?: string; // Mensaje opcional del usuario
+}
+
 interface MetaMessage {
   from: string;
   id: string;
@@ -34,7 +53,16 @@ interface MetaMessage {
     body: string;
   };
   interactive?: MetaInteractiveReply;
-  type: "text" | "image" | "audio" | "video" | "document" | "location" | "interactive";
+  order?: MetaOrder; // Productos seleccionados del catálogo
+  type:
+    | "text"
+    | "image"
+    | "audio"
+    | "video"
+    | "document"
+    | "location"
+    | "interactive"
+    | "order";
 }
 
 interface MetaContact {
@@ -208,11 +236,52 @@ async function processIncomingMessage(
   tenant: Tenant,
 ): Promise<void> {
   try {
-    const { from, id: messageId, type, text, interactive, timestamp } = message;
+    const {
+      from,
+      id: messageId,
+      type,
+      text,
+      interactive,
+      order,
+      timestamp,
+    } = message;
 
     logger.info(
       `Procesando mensaje ${messageId} de ${from} (tipo: ${type}, tenant: ${tenant.name})`,
     );
+
+    // Buscar el nombre del contacto si está disponible
+    const contactName = contacts?.find((c) => c.wa_id === from)?.profile?.name;
+
+    // Procesar mensajes de tipo "order" (selección de catálogo)
+    if (type === "order" && order) {
+      logger.info(
+        `Orden de catálogo recibida de ${from}: ${order.product_items.length} producto(s)`,
+      );
+
+      await processBurgerBotCatalogOrder(
+        {
+          from,
+          messageId,
+          timestamp,
+          contactName,
+          catalogId: order.catalog_id,
+          productItems: order.product_items.map((item) => ({
+            productRetailerId: item.product_retailer_id,
+            quantity: item.quantity,
+            itemPrice: item.item_price,
+            currency: item.currency,
+          })),
+          text: order.text,
+        },
+        tenant,
+      );
+
+      logger.info(
+        `Orden de catálogo procesada exitosamente (de: ${from}, id: ${messageId})`,
+      );
+      return;
+    }
 
     let messageText: string | undefined;
 
@@ -242,9 +311,6 @@ async function processIncomingMessage(
       );
       return;
     }
-
-    // Buscar el nombre del contacto si está disponible
-    const contactName = contacts?.find((c) => c.wa_id === from)?.profile?.name;
 
     // Conectar con el bot refactorizado
     await processBurgerBotMessage(
