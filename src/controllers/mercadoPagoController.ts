@@ -12,7 +12,6 @@ import {
 } from "../services/mercadoPagoService";
 import {
   updateOrder,
-  getOrderByIdGlobal,
   getOrderById,
 } from "../services/orderService";
 import { sendMessage } from "../services/metaService";
@@ -213,16 +212,17 @@ export const handlePaymentWebhook = async (
           `Pago ${paymentId} corresponde a orden ${orderId}, status: ${paymentStatus.status}`,
         );
 
-        // Buscar la orden
-        const order = await getOrderByIdGlobal(orderId);
-
-        if (!order) {
-          logger.warn(`Orden ${orderId} no encontrada`);
+        // Buscar la orden usando el tenant actual (ya sabemos que el pago es de este tenant)
+        let order;
+        try {
+          order = await getOrderById(tenant.id, orderId);
+        } catch {
+          logger.warn(`Orden ${orderId} no encontrada en tenant ${tenant.id}`);
           continue;
         }
 
-        // Verificar que la orden pertenece a este tenant
-        if (order.tenantId !== tenant.id) {
+        if (!order) {
+          logger.warn(`Orden ${orderId} no encontrada`);
           continue;
         }
 
