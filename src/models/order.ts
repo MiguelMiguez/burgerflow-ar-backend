@@ -1,4 +1,5 @@
 export type OrderStatus =
+  | "pendiente_pago" // Orden creada pero esperando confirmación de pago (MP)
   | "pendiente"
   | "confirmado"
   | "en_preparacion"
@@ -54,6 +55,7 @@ export interface CreateOrderInput {
   deliveryCost?: number;
   paymentMethod: PaymentMethod;
   paymentStatus?: PaymentStatus; // Estado inicial del pago (pendiente para transferencias)
+  status?: OrderStatus; // Estado inicial de la orden (si no se especifica, es "pendiente")
   notes?: string;
 }
 

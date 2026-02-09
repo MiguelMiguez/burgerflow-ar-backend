@@ -10,8 +10,9 @@ import {
   getPaymentStatus,
   hasMercadoPagoConfigured,
 } from "../services/mercadoPagoService";
-import { updateOrder, getOrderByIdGlobal } from "../services/orderService";
+import { updateOrder, getOrderByIdGlobal, getOrderById } from "../services/orderService";
 import { sendMessage } from "../services/metaService";
+import { sendNewOrderNotification } from "../services/notificationService";
 
 /**
  * Controlador para la integración con Mercado Pago
@@ -136,6 +137,10 @@ export const handleGetStatus = async (
 /**
  * Webhook de Mercado Pago para notificaciones de pago
  * POST /webhooks/mercadopago
+ * 
+ * Mercado Pago puede enviar notificaciones en dos formatos:
+ * 1. Body: { type: "payment", data: { id: "xxx" } }
+ * 2. Query: ?id=xxx&topic=payment o ?id=xxx&topic=merchant_order
  */
 export const handlePaymentWebhook = async (
   req: Request,
@@ -147,15 +152,25 @@ export const handlePaymentWebhook = async (
     // Responder 200 inmediatamente para evitar reintentos
     res.sendStatus(200);
 
-    const { type, data } = req.body;
+    // Extraer datos del webhook (puede venir en body o query)
+    let type = req.body?.type || req.query?.topic;
+    let paymentId = req.body?.data?.id || req.query?.id;
 
-    // Solo procesar notificaciones de pago
-    if (type !== "payment" || !data?.id) {
-      logger.debug(`Webhook ignorado: type=${type}`);
+    // Si es merchant_order, necesitamos obtener los pagos de esa orden
+    if (type === "merchant_order" && paymentId) {
+      logger.info(`Webhook de merchant_order: ${paymentId}, procesando...`);
+      // Por ahora ignoramos merchant_order ya que el pago debería llegar como notificación separada
+      // TODO: Si es necesario, podemos consultar la merchant_order para obtener el payment_id
       return;
     }
 
-    const paymentId = String(data.id);
+    // Solo procesar notificaciones de pago
+    if (type !== "payment" || !paymentId) {
+      logger.debug(`Webhook ignorado: type=${type}, paymentId=${paymentId}`);
+      return;
+    }
+
+    paymentId = String(paymentId);
     logger.info(`Procesando pago ${paymentId}`);
 
     // Buscar la orden usando el paymentId
@@ -201,6 +216,14 @@ export const handlePaymentWebhook = async (
             paymentStatus: "pagado",
             status: "pendiente", // Ahora sí está confirmado para preparar
           });
+
+          // Obtener la orden actualizada y notificar al admin
+          try {
+            const updatedOrder = await getOrderById(tenant.id, orderId);
+            await sendNewOrderNotification(updatedOrder);
+          } catch (notifError) {
+            logger.warn(`Error al enviar notificación de pago confirmado: ${notifError}`);
+          }
 
           // Notificar al cliente por WhatsApp
           if (order.whatsappChatId) {

@@ -237,6 +237,7 @@ export const handleUpdateOrderStatus = async (
     }
 
     const validStatuses: OrderStatus[] = [
+      "pendiente_pago",
       "pendiente",
       "confirmado",
       "en_preparacion",

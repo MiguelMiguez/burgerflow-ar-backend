@@ -1242,6 +1242,9 @@ const handleOrderConfirmation = async (
       };
     });
 
+    // Determinar si el pago es con Mercado Pago
+    const useMercadoPago = state.paymentMethod === "transferencia" && hasMercadoPagoConfigured(tenant);
+
     const orderInput: CreateOrderInput = {
       tenantId: state.tenantId,
       customerName: state.customerName || CUSTOMER_FALLBACK_NAME,
@@ -1253,6 +1256,8 @@ const handleOrderConfirmation = async (
       paymentMethod: state.paymentMethod || "efectivo",
       // Si es transferencia, el pago está pendiente hasta confirmación de MP
       paymentStatus: state.paymentMethod === "transferencia" ? "pendiente" : undefined,
+      // Si usa Mercado Pago, la orden queda en pendiente_pago hasta confirmar pago
+      status: useMercadoPago ? "pendiente_pago" : undefined,
     };
 
     if (state.orderType === "delivery") {

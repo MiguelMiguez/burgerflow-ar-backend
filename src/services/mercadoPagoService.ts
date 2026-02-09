@@ -11,6 +11,29 @@ import { updateTenant } from "./tenantService";
  */
 
 /**
+ * Obtiene la URL base del backend a partir de mercadoPagoRedirectUri
+ * mercadoPagoRedirectUri tiene el formato: https://domain.com/api/mercadopago/callback
+ * Necesitamos extraer: https://domain.com
+ */
+const getBackendBaseUrl = (): string => {
+  // Si mercadoPagoRedirectUri está configurado, extraer la base
+  if (env.mercadoPagoRedirectUri) {
+    try {
+      const url = new URL(env.mercadoPagoRedirectUri);
+      return `${url.protocol}//${url.host}`;
+    } catch {
+      // Si no es una URL válida, intentar extraerla manualmente
+      const match = env.mercadoPagoRedirectUri.match(/^(https?:\/\/[^\/]+)/);
+      if (match) {
+        return match[1];
+      }
+    }
+  }
+  // Fallback para desarrollo local
+  return `http://localhost:${env.port}`;
+};
+
+/**
  * Interfaz para los items de la preferencia de pago
  */
 interface PreferenceItem {
@@ -233,11 +256,11 @@ export const createPaymentPreference = async (
           name: payerName || "Cliente",
         },
         external_reference: orderId, // Para vincular el pago con la orden
-        notification_url: `${env.mercadoPagoRedirectUri.replace('/callback', '')}/webhooks/mercadopago`,
+        notification_url: `${getBackendBaseUrl()}/api/webhooks/mercadopago`,
         back_urls: {
-          success: `${env.mercadoPagoRedirectUri.replace('/callback', '')}/payment/success`,
-          failure: `${env.mercadoPagoRedirectUri.replace('/callback', '')}/payment/failure`,
-          pending: `${env.mercadoPagoRedirectUri.replace('/callback', '')}/payment/pending`,
+          success: `${getBackendBaseUrl()}/api/mercadopago/payment/success`,
+          failure: `${getBackendBaseUrl()}/api/mercadopago/payment/failure`,
+          pending: `${getBackendBaseUrl()}/api/mercadopago/payment/pending`,
         },
         auto_return: "approved",
         statement_descriptor: tenant.name.substring(0, 22), // Descripción en el resumen de cuenta
@@ -258,8 +281,23 @@ export const createPaymentPreference = async (
       initPoint: result.init_point,
       sandboxInitPoint: result.sandbox_init_point || result.init_point,
     };
-  } catch (error) {
-    logger.error("Error al crear preferencia de pago", error);
+  } catch (error: unknown) {
+    // Log detallado del error para debugging
+    if (error && typeof error === 'object' && 'cause' in error) {
+      logger.error("Error detallado de Mercado Pago:", {
+        message: (error as Error).message,
+        cause: (error as { cause: unknown }).cause,
+      });
+    } else {
+      logger.error("Error al crear preferencia de pago", error);
+    }
+    
+    // Verificar si es un error de API de MP
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    if (errorMessage.includes('401') || errorMessage.includes('Unauthorized')) {
+      throw new Error("Token de Mercado Pago expirado o inválido. Reconectá la cuenta.");
+    }
+    
     throw new Error("No se pudo generar el link de pago. Intenta nuevamente.");
   }
 };

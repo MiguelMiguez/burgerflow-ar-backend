@@ -139,8 +139,8 @@ export const getPendingOrdersByDate = async (
   const startOfDay = new Date(`${date}T00:00:00.000Z`).toISOString();
   const endOfDay = new Date(`${date}T23:59:59.999Z`).toISOString();
 
-  // Estados finales (no pendientes)
-  const finalStatuses: OrderStatus[] = ["entregado", "cancelado"];
+  // Estados que NO deben mostrarse en la lista de pendientes
+  const excludedStatuses: OrderStatus[] = ["entregado", "cancelado", "pendiente_pago"];
 
   const snapshot = await getCollection(tenantId)
     .where("createdAt", ">=", startOfDay)
@@ -148,10 +148,10 @@ export const getPendingOrdersByDate = async (
     .orderBy("createdAt", "desc")
     .get();
 
-  // Filtrar los pedidos que NO están en estados finales
+  // Filtrar los pedidos que NO están en estados excluidos
   return snapshot.docs
     .map(mapSnapshotToOrder)
-    .filter((order) => !finalStatuses.includes(order.status));
+    .filter((order) => !excludedStatuses.includes(order.status));
 };
 
 // Listar pedidos por repartidor en una fecha específica
@@ -379,9 +379,12 @@ export const createOrder = async (
 
   const now = new Date().toISOString();
 
+  // Extraer el status (si se especifica) y el resto del payload
+  const { status: initialStatus, ...restPayload } = payload;
+
   const document: OrderDocument = {
-    ...payload,
-    status: "pendiente",
+    ...restPayload,
+    status: initialStatus || "pendiente",
     subtotal,
     total,
     createdAt: now,
@@ -396,11 +399,14 @@ export const createOrder = async (
   };
 
   // Enviar notificación de nuevo pedido al admin (no bloqueante)
-  sendNewOrderNotification(createdOrder).catch((error) => {
-    logger.warn(
-      `Error al enviar notificación de nuevo pedido: ${error instanceof Error ? error.message : "Error desconocido"}`,
-    );
-  });
+  // Solo notificar si el pedido NO está pendiente de pago
+  if (initialStatus !== "pendiente_pago") {
+    sendNewOrderNotification(createdOrder).catch((error) => {
+      logger.warn(
+        `Error al enviar notificación de nuevo pedido: ${error instanceof Error ? error.message : "Error desconocido"}`,
+      );
+    });
+  }
 
   return createdOrder;
 };
@@ -524,11 +530,11 @@ export const cancelOrder = async (
 ): Promise<Order> => {
   const order = await getOrderById(tenantId, id);
 
-  const cancellableStatuses: OrderStatus[] = ["pendiente", "confirmado"];
+  const cancellableStatuses: OrderStatus[] = ["pendiente_pago", "pendiente", "confirmado"];
   if (!cancellableStatuses.includes(order.status)) {
     throw new HttpError(
       400,
-      "Solo se pueden cancelar pedidos pendientes o confirmados.",
+      "Solo se pueden cancelar pedidos pendientes de pago, pendientes o confirmados.",
     );
   }
 
@@ -593,6 +599,7 @@ const validateStatusTransition = (
   newStatus: OrderStatus,
 ): void => {
   const validTransitions: Record<OrderStatus, OrderStatus[]> = {
+    pendiente_pago: ["pendiente", "cancelado"], // Pago confirmado o cancelado
     pendiente: ["confirmado", "cancelado"],
     confirmado: ["en_preparacion", "cancelado"],
     en_preparacion: ["listo"],

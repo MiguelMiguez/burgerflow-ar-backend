@@ -10,6 +10,11 @@ import { getTenantById } from "./tenantService";
  */
 
 const STATUS_MESSAGES: Record<OrderStatus, (order: Order) => string> = {
+  pendiente_pago: (order) =>
+    `⏳ *Pedido #${order.id.slice(-6).toUpperCase()} esperando pago*\n\n` +
+    `Hola ${order.customerName}! Tu pedido está pendiente de pago.\n` +
+    `Una vez confirmado el pago, comenzaremos a prepararlo. 💳`,
+
   pendiente: (order) =>
     `📋 *Pedido #${order.id.slice(-6).toUpperCase()} recibido*\n\n` +
     `Hola ${order.customerName}! Tu pedido está siendo revisado.\n` +
