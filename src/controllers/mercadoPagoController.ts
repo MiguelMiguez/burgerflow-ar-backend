@@ -10,7 +10,11 @@ import {
   getPaymentStatus,
   hasMercadoPagoConfigured,
 } from "../services/mercadoPagoService";
-import { updateOrder, getOrderByIdGlobal, getOrderById } from "../services/orderService";
+import {
+  updateOrder,
+  getOrderByIdGlobal,
+  getOrderById,
+} from "../services/orderService";
 import { sendMessage } from "../services/metaService";
 import { sendNewOrderNotification } from "../services/notificationService";
 
@@ -28,7 +32,8 @@ export const handleGetAuthUrl = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = (req.headers["x-tenant-id"] as string) || (req.query.tenantId as string);
+    const tenantId =
+      (req.headers["x-tenant-id"] as string) || (req.query.tenantId as string);
 
     if (!tenantId) {
       throw new HttpError(400, "Se requiere tenantId");
@@ -59,9 +64,13 @@ export const handleOAuthCallback = async (
 
     // Manejar errores de OAuth
     if (error) {
-      logger.error(`Error en OAuth de Mercado Pago: ${error} - ${error_description}`);
+      logger.error(
+        `Error en OAuth de Mercado Pago: ${error} - ${error_description}`,
+      );
       // Redirigir al frontend con error
-      res.redirect(`${env.frontendUrl}/configuracion?mp_error=${encodeURIComponent(String(error_description || error))}`);
+      res.redirect(
+        `${env.frontendUrl}/configuracion?mp_error=${encodeURIComponent(String(error_description || error))}`,
+      );
       return;
     }
 
@@ -78,7 +87,9 @@ export const handleOAuthCallback = async (
     res.redirect(`${env.frontendUrl}/configuracion?mp_success=true`);
   } catch (error) {
     logger.error("Error en callback de Mercado Pago", error);
-    res.redirect(`${env.frontendUrl}/configuracion?mp_error=${encodeURIComponent('Error al conectar con Mercado Pago')}`);
+    res.redirect(
+      `${env.frontendUrl}/configuracion?mp_error=${encodeURIComponent("Error al conectar con Mercado Pago")}`,
+    );
   }
 };
 
@@ -137,7 +148,7 @@ export const handleGetStatus = async (
 /**
  * Webhook de Mercado Pago para notificaciones de pago
  * POST /webhooks/mercadopago
- * 
+ *
  * Mercado Pago puede enviar notificaciones en dos formatos:
  * 1. Body: { type: "payment", data: { id: "xxx" } }
  * 2. Query: ?id=xxx&topic=payment o ?id=xxx&topic=merchant_order
@@ -147,7 +158,10 @@ export const handlePaymentWebhook = async (
   res: Response,
 ): Promise<void> => {
   try {
-    logger.info("Webhook de Mercado Pago recibido", { body: req.body, query: req.query });
+    logger.info("Webhook de Mercado Pago recibido", {
+      body: req.body,
+      query: req.query,
+    });
 
     // Responder 200 inmediatamente para evitar reintentos
     res.sendStatus(200);
@@ -195,7 +209,9 @@ export const handlePaymentWebhook = async (
         }
 
         const orderId = paymentStatus.externalReference;
-        logger.info(`Pago ${paymentId} corresponde a orden ${orderId}, status: ${paymentStatus.status}`);
+        logger.info(
+          `Pago ${paymentId} corresponde a orden ${orderId}, status: ${paymentStatus.status}`,
+        );
 
         // Buscar la orden
         const order = await getOrderByIdGlobal(orderId);
@@ -222,24 +238,32 @@ export const handlePaymentWebhook = async (
             const updatedOrder = await getOrderById(tenant.id, orderId);
             await sendNewOrderNotification(updatedOrder);
           } catch (notifError) {
-            logger.warn(`Error al enviar notificación de pago confirmado: ${notifError}`);
+            logger.warn(
+              `Error al enviar notificación de pago confirmado: ${notifError}`,
+            );
           }
 
           // Notificar al cliente por WhatsApp
           if (order.whatsappChatId) {
-            const estimatedTime = order.orderType === "delivery" ? "40-50 minutos" : "20-30 minutos";
+            const estimatedTime =
+              order.orderType === "delivery"
+                ? "40-50 minutos"
+                : "20-30 minutos";
             await sendMessage(
               order.whatsappChatId,
               `✅ *¡Pago recibido!*\n\n` +
-              `Tu pedido *#${orderId.slice(-6).toUpperCase()}* ha sido confirmado y está siendo preparado.\n\n` +
-              `⏱️ Tiempo estimado: ${estimatedTime}\n\n` +
-              `¡Gracias por tu compra! 🍔`,
+                `Tu pedido *#${orderId.slice(-6).toUpperCase()}* ha sido confirmado y está siendo preparado.\n\n` +
+                `⏱️ Tiempo estimado: ${estimatedTime}\n\n` +
+                `¡Gracias por tu compra! 🍔`,
               tenant,
             );
           }
 
           logger.info(`Orden ${orderId} confirmada - pago aprobado`);
-        } else if (paymentStatus.status === "rejected" || paymentStatus.status === "cancelled") {
+        } else if (
+          paymentStatus.status === "rejected" ||
+          paymentStatus.status === "cancelled"
+        ) {
           await updateOrder(tenant.id, orderId, {
             paymentStatus: "rechazado",
           });
@@ -249,8 +273,8 @@ export const handlePaymentWebhook = async (
             await sendMessage(
               order.whatsappChatId,
               `❌ *Pago no procesado*\n\n` +
-              `El pago para tu pedido *#${orderId.slice(-6).toUpperCase()}* no pudo ser procesado.\n\n` +
-              `Por favor, intentá nuevamente o contactate con el local.`,
+                `El pago para tu pedido *#${orderId.slice(-6).toUpperCase()}* no pudo ser procesado.\n\n` +
+                `Por favor, intentá nuevamente o contactate con el local.`,
               tenant,
             );
           }
@@ -258,18 +282,24 @@ export const handlePaymentWebhook = async (
           logger.info(`Orden ${orderId} - pago rechazado`);
         } else {
           // pending, in_process - no hacer nada aún
-          logger.info(`Pago ${paymentId} en estado ${paymentStatus.status}, esperando...`);
+          logger.info(
+            `Pago ${paymentId} en estado ${paymentStatus.status}, esperando...`,
+          );
         }
 
         return; // Pago procesado exitosamente
       } catch (error) {
         // Este tenant no puede acceder al pago, continuar con el siguiente
-        logger.debug(`Tenant ${tenant.id} no pudo acceder al pago ${paymentId}`);
+        logger.debug(
+          `Tenant ${tenant.id} no pudo acceder al pago ${paymentId}`,
+        );
         continue;
       }
     }
 
-    logger.warn(`No se pudo procesar el pago ${paymentId} - no encontrado en ningún tenant`);
+    logger.warn(
+      `No se pudo procesar el pago ${paymentId} - no encontrado en ningún tenant`,
+    );
   } catch (error) {
     logger.error("Error procesando webhook de Mercado Pago", error);
     // No fallar, ya respondimos 200
@@ -285,9 +315,9 @@ export const handlePaymentReturn = async (
   res: Response,
 ): Promise<void> => {
   try {
-    const { 
-      collection_status, 
-      status, 
+    const {
+      collection_status,
+      status,
       external_reference,
       payment_id,
       preference_id,
@@ -297,16 +327,20 @@ export const handlePaymentReturn = async (
     const paymentStatus = status || collection_status || "unknown";
     const orderId = external_reference || "";
 
-    logger.info(`Retorno de pago: status=${paymentStatus}, orderId=${orderId}, paymentId=${payment_id}`);
+    logger.info(
+      `Retorno de pago: status=${paymentStatus}, orderId=${orderId}, paymentId=${payment_id}`,
+    );
 
     // Redirigir al frontend con los parámetros
     const frontendUrl = env.frontendUrl || "https://burgerflow.netlify.app";
     const redirectUrl = new URL("/pedido-completado", frontendUrl);
-    
+
     redirectUrl.searchParams.set("status", String(paymentStatus));
     if (orderId) redirectUrl.searchParams.set("order", String(orderId));
-    if (payment_id) redirectUrl.searchParams.set("payment_id", String(payment_id));
-    if (preference_id) redirectUrl.searchParams.set("preference_id", String(preference_id));
+    if (payment_id)
+      redirectUrl.searchParams.set("payment_id", String(payment_id));
+    if (preference_id)
+      redirectUrl.searchParams.set("preference_id", String(preference_id));
 
     res.redirect(redirectUrl.toString());
   } catch (error) {

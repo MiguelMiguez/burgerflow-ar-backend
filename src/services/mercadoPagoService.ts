@@ -1,5 +1,6 @@
 import { MercadoPagoConfig, Preference, Payment } from "mercadopago";
 import axios from "axios";
+import admin from "firebase-admin";
 import env from "../config/env";
 import { logger } from "../utils/logger";
 import type { Tenant } from "../models/tenant";
@@ -71,7 +72,7 @@ interface CreatePreferenceResponse {
  * Verifica si el tenant tiene Mercado Pago configurado
  */
 export const hasMercadoPagoConfigured = (tenant: Tenant): boolean => {
-  return !!(tenant.mercadoPagoAccessToken);
+  return !!tenant.mercadoPagoAccessToken;
 };
 
 /**
@@ -117,7 +118,7 @@ export const exchangeCodeForTokens = async (
         headers: {
           "Content-Type": "application/json",
         },
-      }
+      },
     );
 
     const tokens = response.data;
@@ -140,7 +141,9 @@ export const exchangeCodeForTokens = async (
     return tokens;
   } catch (error) {
     logger.error("Error al intercambiar código OAuth de Mercado Pago", error);
-    throw new Error("No se pudo conectar con Mercado Pago. Intenta nuevamente.");
+    throw new Error(
+      "No se pudo conectar con Mercado Pago. Intenta nuevamente.",
+    );
   }
 };
 
@@ -167,7 +170,7 @@ export const refreshAccessToken = async (tenant: Tenant): Promise<string> => {
         headers: {
           "Content-Type": "application/json",
         },
-      }
+      },
     );
 
     const tokens = response.data;
@@ -235,13 +238,18 @@ export const createPaymentPreference = async (
     const preference = new Preference(client);
 
     // Calcular el total
-    const total = items.reduce((sum, item) => sum + (item.unit_price * item.quantity), 0);
+    const total = items.reduce(
+      (sum, item) => sum + item.unit_price * item.quantity,
+      0,
+    );
 
-    logger.info(`Creando preferencia de pago para orden ${orderId}, total: $${total}`);
+    logger.info(
+      `Creando preferencia de pago para orden ${orderId}, total: $${total}`,
+    );
 
     const result = await preference.create({
       body: {
-        items: items.map(item => ({
+        items: items.map((item) => ({
           id: item.id,
           title: item.title,
           description: item.description,
@@ -266,7 +274,9 @@ export const createPaymentPreference = async (
         statement_descriptor: tenant.name.substring(0, 22), // Descripción en el resumen de cuenta
         expires: true,
         expiration_date_from: new Date().toISOString(),
-        expiration_date_to: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // 24 horas
+        expiration_date_to: new Date(
+          Date.now() + 24 * 60 * 60 * 1000,
+        ).toISOString(), // 24 horas
       },
     });
 
@@ -274,7 +284,9 @@ export const createPaymentPreference = async (
       throw new Error("Mercado Pago no devolvió una preferencia válida");
     }
 
-    logger.info(`Preferencia creada: ${result.id}, init_point: ${result.init_point}`);
+    logger.info(
+      `Preferencia creada: ${result.id}, init_point: ${result.init_point}`,
+    );
 
     return {
       preferenceId: result.id,
@@ -286,18 +298,20 @@ export const createPaymentPreference = async (
     if (error instanceof Error) {
       logger.error("Error detallado de Mercado Pago:", {
         message: error.message,
-        cause: 'cause' in error ? error.cause : undefined,
+        cause: "cause" in error ? error.cause : undefined,
       });
     } else {
       logger.error("Error al crear preferencia de pago", error);
     }
-    
+
     // Verificar si es un error de API de MP
     const errorMessage = error instanceof Error ? error.message : String(error);
-    if (errorMessage.includes('401') || errorMessage.includes('Unauthorized')) {
-      throw new Error("Token de Mercado Pago expirado o inválido. Reconectá la cuenta.");
+    if (errorMessage.includes("401") || errorMessage.includes("Unauthorized")) {
+      throw new Error(
+        "Token de Mercado Pago expirado o inválido. Reconectá la cuenta.",
+      );
     }
-    
+
     throw new Error("No se pudo generar el link de pago. Intenta nuevamente.");
   }
 };
@@ -308,7 +322,11 @@ export const createPaymentPreference = async (
 export const getPaymentStatus = async (
   tenant: Tenant,
   paymentId: string,
-): Promise<{ status: string; statusDetail: string; externalReference: string }> => {
+): Promise<{
+  status: string;
+  statusDetail: string;
+  externalReference: string;
+}> => {
   try {
     const accessToken = await getValidAccessToken(tenant);
 
@@ -345,11 +363,15 @@ export const processPaymentWebhook = async (
     }
 
     const paymentId = webhookData.data.id;
-    logger.info(`Procesando webhook de pago ${paymentId} para tenant ${tenant.id}`);
+    logger.info(
+      `Procesando webhook de pago ${paymentId} para tenant ${tenant.id}`,
+    );
 
     const paymentStatus = await getPaymentStatus(tenant, paymentId);
 
-    logger.info(`Pago ${paymentId}: status=${paymentStatus.status}, orderId=${paymentStatus.externalReference}`);
+    logger.info(
+      `Pago ${paymentId}: status=${paymentStatus.status}, orderId=${paymentStatus.externalReference}`,
+    );
 
     return {
       orderId: paymentStatus.externalReference,
@@ -364,13 +386,19 @@ export const processPaymentWebhook = async (
 /**
  * Desconecta Mercado Pago del tenant (revoca tokens)
  */
-export const disconnectMercadoPago = async (tenantId: string): Promise<void> => {
-  await updateTenant(tenantId, {
-    mercadoPagoAccessToken: undefined,
-    mercadoPagoRefreshToken: undefined,
-    mercadoPagoPublicKey: undefined,
-    mercadoPagoUserId: undefined,
-    mercadoPagoTokenExpiry: undefined,
+export const disconnectMercadoPago = async (
+  tenantId: string,
+): Promise<void> => {
+  // Usar FieldValue.delete() para borrar campos en Firestore
+  const db = admin.firestore();
+  const docRef = db.collection("tenants").doc(tenantId);
+  
+  await docRef.update({
+    mercadoPagoAccessToken: admin.firestore.FieldValue.delete(),
+    mercadoPagoRefreshToken: admin.firestore.FieldValue.delete(),
+    mercadoPagoPublicKey: admin.firestore.FieldValue.delete(),
+    mercadoPagoUserId: admin.firestore.FieldValue.delete(),
+    mercadoPagoTokenExpiry: admin.firestore.FieldValue.delete(),
   });
 
   logger.info(`Mercado Pago desconectado para tenant ${tenantId}`);

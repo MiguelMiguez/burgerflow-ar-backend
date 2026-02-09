@@ -140,7 +140,11 @@ export const getPendingOrdersByDate = async (
   const endOfDay = new Date(`${date}T23:59:59.999Z`).toISOString();
 
   // Estados que NO deben mostrarse en la lista de pendientes
-  const excludedStatuses: OrderStatus[] = ["entregado", "cancelado", "pendiente_pago"];
+  const excludedStatuses: OrderStatus[] = [
+    "entregado",
+    "cancelado",
+    "pendiente_pago",
+  ];
 
   const snapshot = await getCollection(tenantId)
     .where("createdAt", ">=", startOfDay)
@@ -318,7 +322,7 @@ export const getOrderById = async (
  */
 export const getOrderByIdGlobal = async (
   orderId: string,
-): Promise<Order & { tenantId: string } | null> => {
+): Promise<(Order & { tenantId: string }) | null> => {
   try {
     // Usar collection group query para buscar en todos los tenants
     const snapshot = await getFirestore()
@@ -530,7 +534,11 @@ export const cancelOrder = async (
 ): Promise<Order> => {
   const order = await getOrderById(tenantId, id);
 
-  const cancellableStatuses: OrderStatus[] = ["pendiente_pago", "pendiente", "confirmado"];
+  const cancellableStatuses: OrderStatus[] = [
+    "pendiente_pago",
+    "pendiente",
+    "confirmado",
+  ];
   if (!cancellableStatuses.includes(order.status)) {
     throw new HttpError(
       400,

@@ -12,7 +12,11 @@ export type OrderType = "delivery" | "pickup";
 
 export type PaymentMethod = "efectivo" | "transferencia";
 
-export type PaymentStatus = "pendiente" | "pagado" | "rechazado" | "reembolsado";
+export type PaymentStatus =
+  | "pendiente"
+  | "pagado"
+  | "rechazado"
+  | "reembolsado";
 
 export interface OrderCustomization {
   ingredientId: string;

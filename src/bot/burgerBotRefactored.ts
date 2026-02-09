@@ -1,8 +1,5 @@
 import { logger } from "../utils/logger";
-import {
-  sendMessage,
-  sendInteractiveButtons,
-} from "../services/metaService";
+import { sendMessage, sendInteractiveButtons } from "../services/metaService";
 import { createOrder } from "../services/orderService";
 import { getProductById } from "../services/productService";
 import {
@@ -30,7 +27,7 @@ import { isHttpError } from "../utils/httpError";
 
 /**
  * Bot de Pedidos de Hamburguesas - Flujo basado en Catálogo de WhatsApp
- * 
+ *
  * Flujo principal:
  * 1. Cliente saluda → Bot invita a usar el catálogo
  * 2. Cliente selecciona productos del catálogo
@@ -49,19 +46,19 @@ import { isHttpError } from "../utils/httpError";
 
 type ConversationStep =
   | "idle"
-  | "askingCustomization"           // ¿Deseas personalizar?
-  | "selectingBurgerToCustomize"    // ¿Cuál hamburguesa personalizar?
-  | "selectingCustomizationAction"  // Agregar/Quitar/Continuar
-  | "selectingIngredientToAdd"      // Seleccionar ingrediente para agregar
-  | "selectingIngredientToRemove"   // Seleccionar ingrediente para quitar
-  | "askingExtras"                  // ¿Deseas agregar extras?
-  | "selectingExtras"               // Seleccionando extras
-  | "selectingOrderType"            // Delivery o Pickup
-  | "selectingDeliveryZone"         // Zona de delivery
-  | "awaitingAddress"               // Dirección de entrega
-  | "awaitingDeliveryNotes"         // Referencias de entrega
-  | "selectingPayment"              // Método de pago
-  | "confirmingOrder";              // Confirmar pedido
+  | "askingCustomization" // ¿Deseas personalizar?
+  | "selectingBurgerToCustomize" // ¿Cuál hamburguesa personalizar?
+  | "selectingCustomizationAction" // Agregar/Quitar/Continuar
+  | "selectingIngredientToAdd" // Seleccionar ingrediente para agregar
+  | "selectingIngredientToRemove" // Seleccionar ingrediente para quitar
+  | "askingExtras" // ¿Deseas agregar extras?
+  | "selectingExtras" // Seleccionando extras
+  | "selectingOrderType" // Delivery o Pickup
+  | "selectingDeliveryZone" // Zona de delivery
+  | "awaitingAddress" // Dirección de entrega
+  | "awaitingDeliveryNotes" // Referencias de entrega
+  | "selectingPayment" // Método de pago
+  | "confirmingOrder"; // Confirmar pedido
 
 interface SelectedExtra {
   extra: Extra;
@@ -79,11 +76,11 @@ interface ConversationState {
   step: ConversationStep;
   tenantId: string;
   cart: CartItem[];
-  generalExtras: SelectedExtra[];   // Extras generales del pedido (papas, bebidas, etc.)
-  currentBurgerIndex?: number;      // Índice de la hamburguesa siendo personalizada
+  generalExtras: SelectedExtra[]; // Extras generales del pedido (papas, bebidas, etc.)
+  currentBurgerIndex?: number; // Índice de la hamburguesa siendo personalizada
   availableIngredients?: Ingredient[]; // Ingredientes disponibles para agregar
   ingredientExtrasMap?: { ingredient: Ingredient; extra: Extra }[]; // Mapa de ingredientes con sus extras vinculados
-  availableExtras?: Extra[];        // Extras disponibles
+  availableExtras?: Extra[]; // Extras disponibles
   orderType?: "delivery" | "pickup";
   selectedZone?: DeliveryZone;
   deliveryAddress?: string;
@@ -130,7 +127,11 @@ const resetConversation = (phoneNumber: string): void => {
   conversations.delete(phoneNumber);
 };
 
-const formatCart = (cart: CartItem[], deliveryCost: number = 0, extrasList?: SelectedExtra[]): string => {
+const formatCart = (
+  cart: CartItem[],
+  deliveryCost: number = 0,
+  extrasList?: SelectedExtra[],
+): string => {
   if (cart.length === 0 && (!extrasList || extrasList.length === 0)) {
     return "Tu carrito está vacío.";
   }
@@ -148,7 +149,7 @@ const formatCart = (cart: CartItem[], deliveryCost: number = 0, extrasList?: Sel
     // Sumar extras del producto
     const extrasTotal = item.extras.reduce(
       (sum, e) => sum + e.extra.price * e.quantity * item.quantity,
-      0
+      0,
     );
     itemTotal += extrasTotal;
 
@@ -176,7 +177,9 @@ const formatCart = (cart: CartItem[], deliveryCost: number = 0, extrasList?: Sel
     extrasList.forEach((e) => {
       const extraTotal = e.extra.price * e.quantity;
       subtotal += extraTotal;
-      items.push(`🍟 ${e.quantity}x ${e.extra.name} - ${formatPrice(extraTotal)}`);
+      items.push(
+        `🍟 ${e.quantity}x ${e.extra.name} - ${formatPrice(extraTotal)}`,
+      );
     });
   }
 
@@ -198,14 +201,14 @@ const sendWelcomeMessage = async (
   contactName?: string,
 ): Promise<void> => {
   const greeting = contactName ? `¡Hola ${contactName}! 👋` : "¡Hola! 👋";
-  
+
   await sendMessage(
     phoneNumber,
     `${greeting}\n\n` +
-    `Bienvenido a *${tenant.name}* 🍔\n\n` +
-    `Para hacer tu pedido, seleccioná las hamburguesas que quieras desde nuestro *catálogo* 📋\n\n` +
-    `👉 Tocá el ícono del catálogo en este chat para ver todas nuestras opciones.\n\n` +
-    `Una vez que elijas tus productos, te ayudo a completar el pedido. ¡Gracias por elegirnos!`,
+      `Bienvenido a *${tenant.name}* 🍔\n\n` +
+      `Para hacer tu pedido, seleccioná las hamburguesas que quieras desde nuestro *catálogo* 📋\n\n` +
+      `👉 Tocá el ícono del catálogo en este chat para ver todas nuestras opciones.\n\n` +
+      `Una vez que elijas tus productos, te ayudo a completar el pedido. ¡Gracias por elegirnos!`,
     tenant,
   );
 };
@@ -261,7 +264,11 @@ const handleCustomizationQuestion = async (
     // Mostrar lista de hamburguesas para elegir cuál personalizar
     if (state.cart.length === 1) {
       // Solo hay una hamburguesa, ir directo a personalizarla
-      await showCustomizationActions(phoneNumber, { ...state, currentBurgerIndex: 0 }, tenant);
+      await showCustomizationActions(
+        phoneNumber,
+        { ...state, currentBurgerIndex: 0 },
+        tenant,
+      );
     } else {
       // Hay varias, preguntar cuál
       await showBurgerSelection(phoneNumber, state, tenant);
@@ -301,16 +308,17 @@ const showBurgerSelection = async (
   });
 
   const burgerList = state.cart.map((item, index) => {
-    const mods = item.customizations.length > 0
-      ? ` _(${item.customizations.length} modificación/es)_`
-      : "";
+    const mods =
+      item.customizations.length > 0
+        ? ` _(${item.customizations.length} modificación/es)_`
+        : "";
     return `*${index + 1}.* ${item.quantity}x ${item.product.name}${mods}`;
   });
 
   await sendMessage(
     phoneNumber,
     `¿Cuál hamburguesa querés personalizar?\n\n${burgerList.join("\n")}\n\n` +
-    `Escribí el *número* de la hamburguesa.`,
+      `Escribí el *número* de la hamburguesa.`,
     tenant,
   );
 };
@@ -335,7 +343,11 @@ const handleBurgerSelection = async (
     return;
   }
 
-  await showCustomizationActions(phoneNumber, { ...state, currentBurgerIndex: index }, tenant);
+  await showCustomizationActions(
+    phoneNumber,
+    { ...state, currentBurgerIndex: index },
+    tenant,
+  );
 };
 
 /**
@@ -387,11 +399,24 @@ const handleCustomizationAction = async (
 ): Promise<void> => {
   const normalized = text.trim().toLowerCase();
 
-  if (normalized === "btn_agregar" || normalized === "1" || normalized.includes("agregar")) {
+  if (
+    normalized === "btn_agregar" ||
+    normalized === "1" ||
+    normalized.includes("agregar")
+  ) {
     await showIngredientsToAdd(phoneNumber, state, tenant);
-  } else if (normalized === "btn_quitar" || normalized === "2" || normalized.includes("quitar")) {
+  } else if (
+    normalized === "btn_quitar" ||
+    normalized === "2" ||
+    normalized.includes("quitar")
+  ) {
     await showIngredientsToRemove(phoneNumber, state, tenant);
-  } else if (normalized === "btn_listo" || normalized === "3" || normalized.includes("listo") || normalized.includes("continuar")) {
+  } else if (
+    normalized === "btn_listo" ||
+    normalized === "3" ||
+    normalized.includes("listo") ||
+    normalized.includes("continuar")
+  ) {
     await askForAnotherBurgerCustomization(phoneNumber, state, tenant);
   } else {
     await showCustomizationActions(phoneNumber, state, tenant);
@@ -413,15 +438,20 @@ const showIngredientsToAdd = async (
       listIngredients(state.tenantId),
       listActiveExtras(state.tenantId),
     ]);
-    
+
     // Filtrar ingredientes con stock y que tienen un Extra vinculado
     const ingredientsWithExtras = allIngredients
-      .filter(ing => ing.stock > 0)
-      .map(ing => {
-        const linkedExtra = allExtras.find(extra => extra.linkedProductId === ing.id);
+      .filter((ing) => ing.stock > 0)
+      .map((ing) => {
+        const linkedExtra = allExtras.find(
+          (extra) => extra.linkedProductId === ing.id,
+        );
         return linkedExtra ? { ingredient: ing, extra: linkedExtra } : null;
       })
-      .filter((item): item is { ingredient: Ingredient; extra: Extra } => item !== null);
+      .filter(
+        (item): item is { ingredient: Ingredient; extra: Extra } =>
+          item !== null,
+      );
 
     if (ingredientsWithExtras.length === 0) {
       await sendMessage(
@@ -436,18 +466,19 @@ const showIngredientsToAdd = async (
     setConversationState(phoneNumber, {
       ...state,
       step: "selectingIngredientToAdd",
-      availableIngredients: ingredientsWithExtras.map(i => i.ingredient),
+      availableIngredients: ingredientsWithExtras.map((i) => i.ingredient),
       ingredientExtrasMap: ingredientsWithExtras,
     });
 
-    const ingredientsList = ingredientsWithExtras.map(({ ingredient, extra }, index) => 
-      `*${index + 1}.* ${ingredient.name} (+${formatPrice(extra.price)})`
+    const ingredientsList = ingredientsWithExtras.map(
+      ({ ingredient, extra }, index) =>
+        `*${index + 1}.* ${ingredient.name} (+${formatPrice(extra.price)})`,
     );
 
     await sendMessage(
       phoneNumber,
       `➕ *Ingredientes disponibles para agregar:*\n\n${ingredientsList.join("\n")}\n\n` +
-      `Escribí el *número* del ingrediente o *volver* para cancelar.`,
+        `Escribí el *número* del ingrediente o *volver* para cancelar.`,
       tenant,
     );
   } catch (error) {
@@ -472,7 +503,11 @@ const handleIngredientToAdd = async (
 ): Promise<void> => {
   const normalized = text.trim().toLowerCase();
 
-  if (normalized === "volver" || normalized === "cancelar" || normalized === "0") {
+  if (
+    normalized === "volver" ||
+    normalized === "cancelar" ||
+    normalized === "0"
+  ) {
     await showCustomizationActions(phoneNumber, state, tenant);
     return;
   }
@@ -489,7 +524,8 @@ const handleIngredientToAdd = async (
     return;
   }
 
-  const { ingredient: selectedIngredient, extra: linkedExtra } = ingredientExtrasMap[index];
+  const { ingredient: selectedIngredient, extra: linkedExtra } =
+    ingredientExtrasMap[index];
   const burgerIndex = state.currentBurgerIndex ?? 0;
 
   // Crear la customización con el precio del Extra vinculado
@@ -503,9 +539,10 @@ const handleIngredientToAdd = async (
   // Verificar que no esté ya agregado
   const updatedCart = [...state.cart];
   const burger = updatedCart[burgerIndex];
-  
+
   const alreadyAdded = burger.customizations.some(
-    c => c.ingredientId === customization.ingredientId && c.type === "agregar"
+    (c) =>
+      c.ingredientId === customization.ingredientId && c.type === "agregar",
   );
 
   if (alreadyAdded) {
@@ -516,7 +553,7 @@ const handleIngredientToAdd = async (
     );
   } else {
     burger.customizations.push(customization);
-    
+
     await sendMessage(
       phoneNumber,
       `✅ Agregaste *${selectedIngredient.name}* (+${formatPrice(linkedExtra.price)})`,
@@ -530,7 +567,11 @@ const handleIngredientToAdd = async (
   });
 
   // Volver a mostrar las opciones de personalización
-  await showCustomizationActions(phoneNumber, { ...state, cart: updatedCart }, tenant);
+  await showCustomizationActions(
+    phoneNumber,
+    { ...state, cart: updatedCart },
+    tenant,
+  );
 };
 
 /**
@@ -545,15 +586,17 @@ const showIngredientsToRemove = async (
   const burger = state.cart[burgerIndex];
 
   // Obtener ingredientes removibles del producto
-  const removableIngredients = burger.product.ingredients.filter(ing => ing.isRemovable);
+  const removableIngredients = burger.product.ingredients.filter(
+    (ing) => ing.isRemovable,
+  );
 
   // Filtrar los que ya fueron quitados
   const alreadyRemoved = burger.customizations
-    .filter(c => c.type === "quitar")
-    .map(c => c.ingredientId);
+    .filter((c) => c.type === "quitar")
+    .map((c) => c.ingredientId);
 
   const availableToRemove = removableIngredients.filter(
-    ing => !alreadyRemoved.includes(ing.ingredientId)
+    (ing) => !alreadyRemoved.includes(ing.ingredientId),
   );
 
   if (availableToRemove.length === 0) {
@@ -571,14 +614,14 @@ const showIngredientsToRemove = async (
     step: "selectingIngredientToRemove",
   });
 
-  const ingredientsList = availableToRemove.map((ing, index) => 
-    `*${index + 1}.* ${ing.ingredientName}`
+  const ingredientsList = availableToRemove.map(
+    (ing, index) => `*${index + 1}.* ${ing.ingredientName}`,
   );
 
   await sendMessage(
     phoneNumber,
     `➖ *Ingredientes para quitar:*\n\n${ingredientsList.join("\n")}\n\n` +
-    `Escribí el *número* del ingrediente o *volver* para cancelar.`,
+      `Escribí el *número* del ingrediente o *volver* para cancelar.`,
     tenant,
   );
 };
@@ -594,7 +637,11 @@ const handleIngredientToRemove = async (
 ): Promise<void> => {
   const normalized = text.trim().toLowerCase();
 
-  if (normalized === "volver" || normalized === "cancelar" || normalized === "0") {
+  if (
+    normalized === "volver" ||
+    normalized === "cancelar" ||
+    normalized === "0"
+  ) {
     await showCustomizationActions(phoneNumber, state, tenant);
     return;
   }
@@ -603,12 +650,14 @@ const handleIngredientToRemove = async (
   const burger = state.cart[burgerIndex];
 
   // Obtener ingredientes removibles
-  const removableIngredients = burger.product.ingredients.filter(ing => ing.isRemovable);
+  const removableIngredients = burger.product.ingredients.filter(
+    (ing) => ing.isRemovable,
+  );
   const alreadyRemoved = burger.customizations
-    .filter(c => c.type === "quitar")
-    .map(c => c.ingredientId);
+    .filter((c) => c.type === "quitar")
+    .map((c) => c.ingredientId);
   const availableToRemove = removableIngredients.filter(
-    ing => !alreadyRemoved.includes(ing.ingredientId)
+    (ing) => !alreadyRemoved.includes(ing.ingredientId),
   );
 
   const index = parseInt(text.trim(), 10) - 1;
@@ -648,7 +697,11 @@ const handleIngredientToRemove = async (
   });
 
   // Volver a mostrar las opciones de personalización
-  await showCustomizationActions(phoneNumber, { ...state, cart: updatedCart }, tenant);
+  await showCustomizationActions(
+    phoneNumber,
+    { ...state, cart: updatedCart },
+    tenant,
+  );
 };
 
 /**
@@ -710,7 +763,11 @@ const askExtras = async (
     });
 
     // Mostrar resumen del carrito
-    await sendMessage(phoneNumber, formatCart(state.cart, 0, state.generalExtras), tenant);
+    await sendMessage(
+      phoneNumber,
+      formatCart(state.cart, 0, state.generalExtras),
+      tenant,
+    );
 
     await sendInteractiveButtons(
       phoneNumber,
@@ -785,15 +842,16 @@ const showExtrasSelection = async (
     step: "selectingExtras",
   });
 
-  const extrasList = extras.map((extra, index) => 
-    `*${index + 1}.* ${extra.name} - ${formatPrice(extra.price)}`
+  const extrasList = extras.map(
+    (extra, index) =>
+      `*${index + 1}.* ${extra.name} - ${formatPrice(extra.price)}`,
   );
 
   await sendMessage(
     phoneNumber,
     `🍟 *Extras disponibles:*\n\n${extrasList.join("\n")}\n\n` +
-    `Escribí el *número* del extra que querés agregar.\n` +
-    `Escribí *listo* cuando termines.`,
+      `Escribí el *número* del extra que querés agregar.\n` +
+      `Escribí *listo* cuando termines.`,
     tenant,
   );
 };
@@ -809,7 +867,11 @@ const handleExtrasSelection = async (
 ): Promise<void> => {
   const normalized = text.trim().toLowerCase();
 
-  if (normalized === "listo" || normalized === "continuar" || normalized === "0") {
+  if (
+    normalized === "listo" ||
+    normalized === "continuar" ||
+    normalized === "0"
+  ) {
     await askOrderType(phoneNumber, state, tenant);
     return;
   }
@@ -830,7 +892,9 @@ const handleExtrasSelection = async (
 
   // Verificar si ya existe en generalExtras
   const updatedExtras = [...state.generalExtras];
-  const existingIndex = updatedExtras.findIndex(e => e.extra.id === selectedExtra.id);
+  const existingIndex = updatedExtras.findIndex(
+    (e) => e.extra.id === selectedExtra.id,
+  );
 
   if (existingIndex >= 0) {
     // Incrementar cantidad
@@ -848,7 +912,7 @@ const handleExtrasSelection = async (
   await sendMessage(
     phoneNumber,
     `✅ Agregaste *${selectedExtra.name}* (+${formatPrice(selectedExtra.price)})\n\n` +
-    `Escribí otro número para más extras o *listo* para continuar.`,
+      `Escribí otro número para más extras o *listo* para continuar.`,
     tenant,
   );
 };
@@ -884,7 +948,11 @@ const askOrderType = async (
     await handleDeliveryFlow(phoneNumber, state, tenant);
   } else {
     // Solo pickup
-    await askPaymentMethod(phoneNumber, { ...state, orderType: "pickup" }, tenant);
+    await askPaymentMethod(
+      phoneNumber,
+      { ...state, orderType: "pickup" },
+      tenant,
+    );
   }
 };
 
@@ -908,7 +976,11 @@ const handleOrderTypeSelection = async (
     normalized.includes("retiro") ||
     normalized.includes("local")
   ) {
-    await askPaymentMethod(phoneNumber, { ...state, orderType: "pickup" }, tenant);
+    await askPaymentMethod(
+      phoneNumber,
+      { ...state, orderType: "pickup" },
+      tenant,
+    );
   } else {
     await sendInteractiveButtons(
       phoneNumber,
@@ -942,7 +1014,8 @@ const handleDeliveryFlow = async (
       });
 
       const zonesList = zones.map(
-        (zone, index) => `*${index + 1}.* ${zone.name} - ${formatPrice(zone.price)}`
+        (zone, index) =>
+          `*${index + 1}.* ${zone.name} - ${formatPrice(zone.price)}`,
       );
 
       await sendMessage(
@@ -980,7 +1053,9 @@ const handleDeliveryFlow = async (
   }
 };
 
-const getActiveZonesWithFallback = async (tenantId: string): Promise<DeliveryZone[]> => {
+const getActiveZonesWithFallback = async (
+  tenantId: string,
+): Promise<DeliveryZone[]> => {
   try {
     return await listActiveDeliveryZones(tenantId);
   } catch {
@@ -1020,12 +1095,16 @@ const handleDeliveryZoneSelection = async (
     await sendMessage(
       phoneNumber,
       `Zona: *${selectedZone.name}* (Envío: ${formatPrice(selectedZone.price)})\n\n` +
-      `Por favor, escribí tu *dirección completa*.\n_(Calle, número, piso/depto)_`,
+        `Por favor, escribí tu *dirección completa*.\n_(Calle, número, piso/depto)_`,
       tenant,
     );
   } catch (error) {
     logger.error("Error al seleccionar zona", error);
-    await sendMessage(phoneNumber, "Hubo un error. Intenta nuevamente.", tenant);
+    await sendMessage(
+      phoneNumber,
+      "Hubo un error. Intenta nuevamente.",
+      tenant,
+    );
   }
 };
 
@@ -1055,8 +1134,8 @@ const handleAddressInput = async (
   await sendMessage(
     phoneNumber,
     `📍 Dirección: *${address}*\n\n` +
-    `Escribí una *referencia* para encontrarte más fácil.\n` +
-    `_Ej: Casa con portón negro, al lado de la farmacia, etc._`,
+      `Escribí una *referencia* para encontrarte más fácil.\n` +
+      `_Ej: Casa con portón negro, al lado de la farmacia, etc._`,
     tenant,
   );
 };
@@ -1074,7 +1153,11 @@ const handleDeliveryNotesInput = async (
     deliveryNotes: notes,
   });
 
-  await askPaymentMethod(phoneNumber, { ...state, deliveryNotes: notes }, tenant);
+  await askPaymentMethod(
+    phoneNumber,
+    { ...state, deliveryNotes: notes },
+    tenant,
+  );
 };
 
 // ============================================================================
@@ -1150,7 +1233,8 @@ const showOrderSummary = async (
   tenant: Tenant,
 ): Promise<void> => {
   const deliveryCost = state.selectedZone?.price ?? 0;
-  const paymentText = state.paymentMethod === "efectivo" ? "💵 Efectivo" : "💳 Transferencia";
+  const paymentText =
+    state.paymentMethod === "efectivo" ? "💵 Efectivo" : "💳 Transferencia";
 
   let orderTypeText = "🏪 Retiro en local";
   if (state.orderType === "delivery") {
@@ -1171,9 +1255,9 @@ const showOrderSummary = async (
   await sendMessage(
     phoneNumber,
     `📋 *Resumen de tu pedido*\n\n` +
-    `${formatCart(state.cart, deliveryCost)}\n\n` +
-    `${orderTypeText}\n` +
-    `Pago: ${paymentText}`,
+      `${formatCart(state.cart, deliveryCost)}\n\n` +
+      `${orderTypeText}\n` +
+      `Pago: ${paymentText}`,
     tenant,
   );
 
@@ -1243,7 +1327,9 @@ const handleOrderConfirmation = async (
     });
 
     // Determinar si el pago es con Mercado Pago
-    const useMercadoPago = state.paymentMethod === "transferencia" && hasMercadoPagoConfigured(tenant);
+    const useMercadoPago =
+      state.paymentMethod === "transferencia" &&
+      hasMercadoPagoConfigured(tenant);
 
     const orderInput: CreateOrderInput = {
       tenantId: state.tenantId,
@@ -1255,13 +1341,15 @@ const handleOrderConfirmation = async (
       deliveryCost: state.orderType === "delivery" ? deliveryCost : 0,
       paymentMethod: state.paymentMethod || "efectivo",
       // Si es transferencia, el pago está pendiente hasta confirmación de MP
-      paymentStatus: state.paymentMethod === "transferencia" ? "pendiente" : undefined,
+      paymentStatus:
+        state.paymentMethod === "transferencia" ? "pendiente" : undefined,
       // Si usa Mercado Pago, la orden queda en pendiente_pago hasta confirmar pago
       status: useMercadoPago ? "pendiente_pago" : undefined,
     };
 
     if (state.orderType === "delivery") {
-      if (state.deliveryAddress) orderInput.deliveryAddress = state.deliveryAddress;
+      if (state.deliveryAddress)
+        orderInput.deliveryAddress = state.deliveryAddress;
       if (state.selectedZone) {
         orderInput.deliveryZoneId = state.selectedZone.id;
         orderInput.deliveryZoneName = state.selectedZone.name;
@@ -1272,18 +1360,24 @@ const handleOrderConfirmation = async (
     const order = await createOrder(orderInput);
     resetConversation(phoneNumber);
 
-    const estimatedTime = state.orderType === "delivery" ? "40-50 minutos" : "20-30 minutos";
+    const estimatedTime =
+      state.orderType === "delivery" ? "40-50 minutos" : "20-30 minutos";
 
     // Si es transferencia y hay MP configurado, generar link de pago
-    if (state.paymentMethod === "transferencia" && hasMercadoPagoConfigured(tenant)) {
+    if (
+      state.paymentMethod === "transferencia" &&
+      hasMercadoPagoConfigured(tenant)
+    ) {
       try {
         const mpItems = state.cart.map((cartItem, index) => ({
           id: `item-${index}`,
           title: cartItem.product.name,
           quantity: cartItem.quantity,
-          unit_price: cartItem.product.price + cartItem.customizations
-            .filter(c => c.type === "agregar")
-            .reduce((sum, c) => sum + c.extraPrice, 0),
+          unit_price:
+            cartItem.product.price +
+            cartItem.customizations
+              .filter((c) => c.type === "agregar")
+              .reduce((sum, c) => sum + c.extraPrice, 0),
           currency_id: "ARS",
         }));
 
@@ -1309,12 +1403,12 @@ const handleOrderConfirmation = async (
         await sendMessage(
           phoneNumber,
           `⏳ *Pedido pendiente de pago*\n\n` +
-          `Número de pedido: *#${order.id.slice(-6).toUpperCase()}*\n\n` +
-          `💳 *Para confirmar tu pedido, realizá el pago:*\n\n` +
-          `👉 ${preference.initPoint}\n\n` +
-          `⚠️ *Tu pedido NO será preparado hasta confirmar el pago.*\n\n` +
-          `Te enviaremos un mensaje cuando recibamos la confirmación.\n\n` +
-          `Tiempo estimado después del pago: ${estimatedTime}`,
+            `Número de pedido: *#${order.id.slice(-6).toUpperCase()}*\n\n` +
+            `💳 *Para confirmar tu pedido, realizá el pago:*\n\n` +
+            `👉 ${preference.initPoint}\n\n` +
+            `⚠️ *Tu pedido NO será preparado hasta confirmar el pago.*\n\n` +
+            `Te enviaremos un mensaje cuando recibamos la confirmación.\n\n` +
+            `Tiempo estimado después del pago: ${estimatedTime}`,
           tenant,
         );
         return;
@@ -1324,11 +1418,11 @@ const handleOrderConfirmation = async (
         await sendMessage(
           phoneNumber,
           `✅ *¡Pedido confirmado!*\n\n` +
-          `Número de pedido: *#${order.id.slice(-6).toUpperCase()}*\n\n` +
-          `⚠️ No pudimos generar el link de pago automático.\n` +
-          `Por favor, coordiná el pago con el local.\n\n` +
-          `Tiempo estimado: ${estimatedTime}\n\n` +
-          `¡Gracias por elegirnos! 🍔`,
+            `Número de pedido: *#${order.id.slice(-6).toUpperCase()}*\n\n` +
+            `⚠️ No pudimos generar el link de pago automático.\n` +
+            `Por favor, coordiná el pago con el local.\n\n` +
+            `Tiempo estimado: ${estimatedTime}\n\n` +
+            `¡Gracias por elegirnos! 🍔`,
           tenant,
         );
         return;
@@ -1339,16 +1433,20 @@ const handleOrderConfirmation = async (
     await sendMessage(
       phoneNumber,
       `✅ *¡Pedido confirmado!*\n\n` +
-      `Número de pedido: *#${order.id.slice(-6).toUpperCase()}*\n\n` +
-      `Tiempo estimado: ${estimatedTime}\n\n` +
-      `Te avisaremos cuando tu pedido esté listo. ¡Gracias por elegirnos! 🍔`,
+        `Número de pedido: *#${order.id.slice(-6).toUpperCase()}*\n\n` +
+        `Tiempo estimado: ${estimatedTime}\n\n` +
+        `Te avisaremos cuando tu pedido esté listo. ¡Gracias por elegirnos! 🍔`,
       tenant,
     );
   } catch (error) {
     logger.error("Error al crear el pedido", error);
-    
+
     if (isHttpError(error)) {
-      await sendMessage(phoneNumber, `No se pudo crear el pedido: ${error.message}`, tenant);
+      await sendMessage(
+        phoneNumber,
+        `No se pudo crear el pedido: ${error.message}`,
+        tenant,
+      );
     } else {
       await sendMessage(
         phoneNumber,
@@ -1486,7 +1584,9 @@ export const processCatalogOrder = async (
 ): Promise<void> => {
   const { from: phoneNumber, productItems, contactName } = orderPayload;
 
-  logger.info(`Procesando orden de catálogo de ${phoneNumber}: ${productItems.length} producto(s)`);
+  logger.info(
+    `Procesando orden de catálogo de ${phoneNumber}: ${productItems.length} producto(s)`,
+  );
 
   if (productItems.length === 0) {
     await sendMessage(
@@ -1532,7 +1632,7 @@ export const processCatalogOrder = async (
       await sendMessage(
         phoneNumber,
         "Lo sentimos, los productos seleccionados no están disponibles. 😔\n\n" +
-        "Revisá el catálogo para ver las opciones disponibles.",
+          "Revisá el catálogo para ver las opciones disponibles.",
         tenant,
       );
       return;
