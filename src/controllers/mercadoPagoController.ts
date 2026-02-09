@@ -252,3 +252,44 @@ export const handlePaymentWebhook = async (
     // No fallar, ya respondimos 200
   }
 };
+
+/**
+ * Handler para las URLs de retorno de Mercado Pago (success, failure, pending)
+ * Redirige al frontend con los parámetros del pago
+ */
+export const handlePaymentReturn = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    const { 
+      collection_status, 
+      status, 
+      external_reference,
+      payment_id,
+      preference_id,
+    } = req.query;
+
+    // Determinar el estado del pago
+    const paymentStatus = status || collection_status || "unknown";
+    const orderId = external_reference || "";
+
+    logger.info(`Retorno de pago: status=${paymentStatus}, orderId=${orderId}, paymentId=${payment_id}`);
+
+    // Redirigir al frontend con los parámetros
+    const frontendUrl = env.frontendUrl || "https://burgerflow.netlify.app";
+    const redirectUrl = new URL("/pedido-completado", frontendUrl);
+    
+    redirectUrl.searchParams.set("status", String(paymentStatus));
+    if (orderId) redirectUrl.searchParams.set("order", String(orderId));
+    if (payment_id) redirectUrl.searchParams.set("payment_id", String(payment_id));
+    if (preference_id) redirectUrl.searchParams.set("preference_id", String(preference_id));
+
+    res.redirect(redirectUrl.toString());
+  } catch (error) {
+    logger.error("Error en retorno de pago", error);
+    // Redirigir al frontend con error
+    const frontendUrl = env.frontendUrl || "https://burgerflow.netlify.app";
+    res.redirect(`${frontendUrl}?payment_error=true`);
+  }
+};

@@ -5,9 +5,38 @@ import {
   handleOAuthCallback,
   handleDisconnect,
   handleGetStatus,
+  handlePaymentWebhook,
+  handlePaymentReturn,
 } from "../controllers/mercadoPagoController";
 
 const router = Router();
+
+// ============================================================================
+// RUTAS PÚBLICAS (sin autenticación) - Llamadas por Mercado Pago
+// ============================================================================
+
+/**
+ * @swagger
+ * /api/mercadopago/webhooks/mercadopago:
+ *   post:
+ *     summary: Webhook de notificaciones de Mercado Pago
+ *     tags: [Mercado Pago]
+ *     responses:
+ *       200:
+ *         description: Webhook recibido
+ */
+router.post("/webhooks/mercadopago", handlePaymentWebhook);
+
+/**
+ * URLs de retorno después del pago (redirigen al frontend)
+ */
+router.get("/payment/success", handlePaymentReturn);
+router.get("/payment/failure", handlePaymentReturn);
+router.get("/payment/pending", handlePaymentReturn);
+
+// ============================================================================
+// RUTAS PROTEGIDAS (requieren autenticación)
+// ============================================================================
 
 /**
  * @swagger
