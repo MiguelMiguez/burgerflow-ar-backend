@@ -15,6 +15,12 @@ interface EnvConfig {
   // API Keys
   adminApiKey: string;
   userApiKey: string;
+  // Mercado Pago OAuth (para la app, no para cada tenant)
+  mercadoPagoAppId: string;
+  mercadoPagoClientSecret: string;
+  mercadoPagoRedirectUri: string;
+  // Frontend URL (para redirecciones)
+  frontendUrl: string;
 }
 
 const rawEnv = {
@@ -29,6 +35,12 @@ const rawEnv = {
   // API Keys
   ADMIN_API_KEY: process.env.ADMIN_API_KEY,
   USER_API_KEY: process.env.USER_API_KEY,
+  // Mercado Pago OAuth
+  MERCADO_PAGO_APP_ID: process.env.MERCADO_PAGO_APP_ID,
+  MERCADO_PAGO_CLIENT_SECRET: process.env.MERCADO_PAGO_CLIENT_SECRET,
+  MERCADO_PAGO_REDIRECT_URI: process.env.MERCADO_PAGO_REDIRECT_URI,
+  // Frontend URL
+  FRONTEND_URL: process.env.FRONTEND_URL,
 };
 
 const sanitizeMultilineSecret = (value: string | undefined): string => {
@@ -57,6 +69,12 @@ const env: EnvConfig = {
   // API Keys
   adminApiKey: rawEnv.ADMIN_API_KEY?.trim() ?? "",
   userApiKey: rawEnv.USER_API_KEY?.trim() ?? "",
+  // Mercado Pago OAuth
+  mercadoPagoAppId: rawEnv.MERCADO_PAGO_APP_ID?.trim() ?? "",
+  mercadoPagoClientSecret: rawEnv.MERCADO_PAGO_CLIENT_SECRET?.trim() ?? "",
+  mercadoPagoRedirectUri: rawEnv.MERCADO_PAGO_REDIRECT_URI?.trim() ?? "",
+  // Frontend URL
+  frontendUrl: rawEnv.FRONTEND_URL?.trim() ?? "http://localhost:5173",
 };
 
 const credentialKeys: Array<

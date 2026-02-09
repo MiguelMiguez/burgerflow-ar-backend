@@ -15,6 +15,10 @@ import {
 } from "../services/deliveryZoneService";
 import { listActiveExtras } from "../services/extraService";
 import { getIngredientById } from "../services/ingredientService";
+import {
+  createPaymentPreference,
+  hasMercadoPagoConfigured,
+} from "../services/mercadoPagoService";
 import type { Tenant } from "../models/tenant";
 import type { Product } from "../models/product";
 import type { DeliveryZone } from "../models/deliveryZone";
@@ -1373,6 +1377,76 @@ const handleOrderConfirmation = async (
 
     const estimatedTime =
       state.orderType === "delivery" ? "40-50 minutos" : "20-30 minutos";
+
+    // Si el método de pago es transferencia, generar link de Mercado Pago
+    if (state.paymentMethod === "transferencia" && hasMercadoPagoConfigured(tenant)) {
+      try {
+        const mpItems = state.cart.map((cartItem, index) => ({
+          id: `item-${index}`,
+          title: cartItem.product.name,
+          quantity: cartItem.quantity,
+          unit_price: cartItem.product.price,
+          currency_id: "ARS",
+        }));
+
+        // Agregar extras al precio
+        state.cart.forEach((cartItem, cartIndex) => {
+          cartItem.extras.forEach((extra, extraIndex) => {
+            mpItems.push({
+              id: `extra-${cartIndex}-${extraIndex}`,
+              title: `${extra.extra.name} (x${cartItem.quantity})`,
+              quantity: extra.quantity,
+              unit_price: extra.extra.price,
+              currency_id: "ARS",
+            });
+          });
+        });
+
+        // Agregar costo de delivery si aplica
+        if (deliveryCost > 0) {
+          mpItems.push({
+            id: "delivery",
+            title: "Costo de delivery",
+            quantity: 1,
+            unit_price: deliveryCost,
+            currency_id: "ARS",
+          });
+        }
+
+        const preference = await createPaymentPreference(
+          tenant,
+          order.id,
+          mpItems,
+          phoneNumber,
+          state.customerName || CUSTOMER_FALLBACK_NAME,
+        );
+
+        await sendMessage(
+          phoneNumber,
+          `✅ *¡Pedido registrado!*\n\n` +
+            `Número de pedido: *#${order.id.slice(-6).toUpperCase()}*\n\n` +
+            `💳 *Para completar tu pedido, realiza el pago:*\n\n` +
+            `👉 ${preference.initPoint}\n\n` +
+            `Una vez confirmado el pago, comenzaremos a preparar tu pedido.\n\n` +
+            `Tiempo estimado después del pago: ${estimatedTime}`,
+          tenant,
+        );
+        return;
+      } catch (mpError) {
+        logger.error("Error al crear preferencia de Mercado Pago", mpError);
+        // Si falla MP, continuar con el flujo normal
+        await sendMessage(
+          phoneNumber,
+          `✅ *¡Pedido confirmado!*\n\n` +
+            `Número de pedido: *#${order.id.slice(-6).toUpperCase()}*\n\n` +
+            `⚠️ No pudimos generar el link de pago. Por favor, coordina el pago con el local.\n\n` +
+            `Tiempo estimado: ${estimatedTime}\n\n` +
+            `Te avisaremos cuando tu pedido esté listo. ¡Gracias por elegirnos! 🍔`,
+          tenant,
+        );
+        return;
+      }
+    }
 
     await sendMessage(
       phoneNumber,

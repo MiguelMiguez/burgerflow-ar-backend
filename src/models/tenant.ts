@@ -13,6 +13,12 @@ export interface CreateTenantInput {
   metaAccessToken?: string;
   // Meta WhatsApp Catalog
   metaCatalogId?: string; // ID del catálogo de WhatsApp Business
+  // Mercado Pago OAuth credentials
+  mercadoPagoAccessToken?: string; // Access token obtenido via OAuth
+  mercadoPagoRefreshToken?: string; // Refresh token para renovar el access token
+  mercadoPagoPublicKey?: string; // Public key para el frontend
+  mercadoPagoUserId?: string; // ID del usuario de Mercado Pago
+  mercadoPagoTokenExpiry?: string; // Fecha de expiración del token
 }
 
 export interface UpdateTenantInput {
@@ -30,6 +36,12 @@ export interface UpdateTenantInput {
   metaAccessToken?: string;
   // Meta WhatsApp Catalog
   metaCatalogId?: string; // ID del catálogo de WhatsApp Business
+  // Mercado Pago OAuth credentials
+  mercadoPagoAccessToken?: string;
+  mercadoPagoRefreshToken?: string;
+  mercadoPagoPublicKey?: string;
+  mercadoPagoUserId?: string;
+  mercadoPagoTokenExpiry?: string;
 }
 
 export interface Tenant extends Omit<

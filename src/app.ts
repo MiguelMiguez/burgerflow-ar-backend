@@ -3,6 +3,8 @@ import express, { type Request, type Response } from "express";
 import swaggerUi from "swagger-ui-express";
 import routes from "./routes";
 import webhookRoutes from "./routes/webhookRoutes";
+import mercadoPagoRoutes from "./routes/mercadoPagoRoutes";
+import { handlePaymentWebhook } from "./controllers/mercadoPagoController";
 import { errorHandler } from "./middlewares/errorHandler";
 import { logger } from "./utils/logger";
 import swaggerDocument from "./config/swagger";
@@ -66,6 +68,13 @@ app.get("/", (_req: Request, res: Response) => {
 // El webhook de Meta NO debe requerir autenticación JWT
 // La validación se hace mediante el verify_token y opcionalmente la firma
 app.use("/api/webhook", webhookRoutes);
+
+// Webhook de Mercado Pago - Sin autenticación JWT
+// Mercado Pago envía notificaciones de pago a esta ruta
+app.post("/api/webhooks/mercadopago", handlePaymentWebhook);
+
+// Rutas de Mercado Pago OAuth
+app.use("/api/mercadopago", mercadoPagoRoutes);
 
 // Rutas de la API
 // Nota: La autenticación se aplica a nivel de ruta individual, no globalmente

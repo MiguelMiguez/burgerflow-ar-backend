@@ -11,6 +11,8 @@ export type OrderType = "delivery" | "pickup";
 
 export type PaymentMethod = "efectivo" | "transferencia";
 
+export type PaymentStatus = "pendiente" | "pagado" | "rechazado" | "reembolsado";
+
 export interface OrderCustomization {
   ingredientId: string;
   ingredientName: string;
@@ -56,6 +58,7 @@ export interface CreateOrderInput {
 
 export interface UpdateOrderInput {
   status?: OrderStatus;
+  paymentStatus?: PaymentStatus;
   deliveryId?: string;
   deliveryCost?: number;
   paymentMethod?: PaymentMethod;
@@ -66,6 +69,7 @@ export interface UpdateOrderInput {
 export interface Order extends CreateOrderInput {
   id: string;
   status: OrderStatus;
+  paymentStatus?: PaymentStatus;
   subtotal: number;
   total: number;
   createdAt: string;
