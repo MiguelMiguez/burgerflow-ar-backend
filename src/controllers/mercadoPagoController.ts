@@ -27,7 +27,7 @@ export const handleGetAuthUrl = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = req.user?.tenantId || (req.query.tenantId as string);
+    const tenantId = (req.headers["x-tenant-id"] as string) || (req.query.tenantId as string);
 
     if (!tenantId) {
       throw new HttpError(400, "Se requiere tenantId");
@@ -91,10 +91,10 @@ export const handleDisconnect = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = req.user?.tenantId;
+    const tenantId = req.headers["x-tenant-id"] as string;
 
     if (!tenantId) {
-      throw new HttpError(400, "Se requiere autenticación");
+      throw new HttpError(400, "Se requiere tenantId");
     }
 
     await disconnectMercadoPago(tenantId);
@@ -115,10 +115,10 @@ export const handleGetStatus = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = req.user?.tenantId;
+    const tenantId = req.headers["x-tenant-id"] as string;
 
     if (!tenantId) {
-      throw new HttpError(400, "Se requiere autenticación");
+      throw new HttpError(400, "Se requiere tenantId");
     }
 
     const tenant = await getTenantById(tenantId);
