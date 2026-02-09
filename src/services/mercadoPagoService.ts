@@ -283,10 +283,10 @@ export const createPaymentPreference = async (
     };
   } catch (error: unknown) {
     // Log detallado del error para debugging
-    if (error && typeof error === 'object' && 'cause' in error) {
+    if (error instanceof Error) {
       logger.error("Error detallado de Mercado Pago:", {
-        message: (error as Error).message,
-        cause: (error as { cause: unknown }).cause,
+        message: error.message,
+        cause: 'cause' in error ? error.cause : undefined,
       });
     } else {
       logger.error("Error al crear preferencia de pago", error);
