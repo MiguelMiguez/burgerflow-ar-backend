@@ -53,6 +53,7 @@ export interface CreateOrderInput {
   deliveryId?: string;
   deliveryCost?: number;
   paymentMethod: PaymentMethod;
+  paymentStatus?: PaymentStatus; // Estado inicial del pago (pendiente para transferencias)
   notes?: string;
 }
 

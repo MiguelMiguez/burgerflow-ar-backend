@@ -312,6 +312,44 @@ export const getOrderById = async (
   };
 };
 
+/**
+ * Busca una orden por ID en todos los tenants
+ * Útil para webhooks de pago donde no conocemos el tenant
+ */
+export const getOrderByIdGlobal = async (
+  orderId: string,
+): Promise<Order & { tenantId: string } | null> => {
+  try {
+    // Usar collection group query para buscar en todos los tenants
+    const snapshot = await getFirestore()
+      .collectionGroup(ORDERS_COLLECTION)
+      .where("__name__", ">=", orderId)
+      .where("__name__", "<=", orderId + "\uf8ff")
+      .limit(10)
+      .get();
+
+    // Buscar el documento exacto
+    for (const doc of snapshot.docs) {
+      if (doc.id === orderId) {
+        // Extraer el tenantId del path: tenants/{tenantId}/orders/{orderId}
+        const pathParts = doc.ref.path.split("/");
+        const tenantIdFromPath = pathParts[1];
+
+        return {
+          ...(doc.data() as OrderDocument),
+          id: doc.id,
+          tenantId: tenantIdFromPath,
+        };
+      }
+    }
+
+    return null;
+  } catch (error) {
+    logger.error(`Error buscando orden global ${orderId}`, error);
+    return null;
+  }
+};
+
 export const createOrder = async (
   payload: CreateOrderInput,
 ): Promise<Order> => {

@@ -7,10 +7,10 @@ import {
   getOAuthAuthorizationUrl,
   exchangeCodeForTokens,
   disconnectMercadoPago,
-  processPaymentWebhook,
+  getPaymentStatus,
   hasMercadoPagoConfigured,
 } from "../services/mercadoPagoService";
-import { updateOrder } from "../services/orderService";
+import { updateOrder, getOrderByIdGlobal } from "../services/orderService";
 import { sendMessage } from "../services/metaService";
 
 /**
@@ -149,70 +149,106 @@ export const handlePaymentWebhook = async (
 
     const { type, data } = req.body;
 
-    if (!type || !data?.id) {
-      logger.warn("Webhook de Mercado Pago sin datos válidos");
+    // Solo procesar notificaciones de pago
+    if (type !== "payment" || !data?.id) {
+      logger.debug(`Webhook ignorado: type=${type}`);
       return;
     }
 
-    // El webhook no incluye el tenantId directamente
-    // Necesitamos obtenerlo del external_reference (orderId) cuando procesamos el pago
-    // Por ahora, procesamos todos los tenants que tengan MP configurado
+    const paymentId = String(data.id);
+    logger.info(`Procesando pago ${paymentId}`);
 
-    // TODO: En producción, deberías almacenar el orderId con su tenantId
-    // para poder identificar el tenant correcto
+    // Buscar la orden usando el paymentId
+    // Primero necesitamos obtener el external_reference del pago
+    // Para esto, necesitamos iterar por los tenants con MP configurado
 
-    logger.info(`Webhook procesado: type=${type}, paymentId=${data.id}`);
+    // Alternativa: buscar en todos los tenants con MP
+    const { listTenants } = await import("../services/tenantService");
+    const tenants = await listTenants();
+
+    for (const tenant of tenants) {
+      if (!hasMercadoPagoConfigured(tenant)) {
+        continue;
+      }
+
+      try {
+        // Intentar obtener el estado del pago con este tenant
+        const paymentStatus = await getPaymentStatus(tenant, paymentId);
+
+        if (!paymentStatus.externalReference) {
+          continue;
+        }
+
+        const orderId = paymentStatus.externalReference;
+        logger.info(`Pago ${paymentId} corresponde a orden ${orderId}, status: ${paymentStatus.status}`);
+
+        // Buscar la orden
+        const order = await getOrderByIdGlobal(orderId);
+
+        if (!order) {
+          logger.warn(`Orden ${orderId} no encontrada`);
+          continue;
+        }
+
+        // Verificar que la orden pertenece a este tenant
+        if (order.tenantId !== tenant.id) {
+          continue;
+        }
+
+        // Actualizar según el estado del pago
+        if (paymentStatus.status === "approved") {
+          await updateOrder(tenant.id, orderId, {
+            paymentStatus: "pagado",
+            status: "pendiente", // Ahora sí está confirmado para preparar
+          });
+
+          // Notificar al cliente por WhatsApp
+          if (order.whatsappChatId) {
+            const estimatedTime = order.orderType === "delivery" ? "40-50 minutos" : "20-30 minutos";
+            await sendMessage(
+              order.whatsappChatId,
+              `✅ *¡Pago recibido!*\n\n` +
+              `Tu pedido *#${orderId.slice(-6).toUpperCase()}* ha sido confirmado y está siendo preparado.\n\n` +
+              `⏱️ Tiempo estimado: ${estimatedTime}\n\n` +
+              `¡Gracias por tu compra! 🍔`,
+              tenant,
+            );
+          }
+
+          logger.info(`Orden ${orderId} confirmada - pago aprobado`);
+        } else if (paymentStatus.status === "rejected" || paymentStatus.status === "cancelled") {
+          await updateOrder(tenant.id, orderId, {
+            paymentStatus: "rechazado",
+          });
+
+          // Notificar al cliente
+          if (order.whatsappChatId) {
+            await sendMessage(
+              order.whatsappChatId,
+              `❌ *Pago no procesado*\n\n` +
+              `El pago para tu pedido *#${orderId.slice(-6).toUpperCase()}* no pudo ser procesado.\n\n` +
+              `Por favor, intentá nuevamente o contactate con el local.`,
+              tenant,
+            );
+          }
+
+          logger.info(`Orden ${orderId} - pago rechazado`);
+        } else {
+          // pending, in_process - no hacer nada aún
+          logger.info(`Pago ${paymentId} en estado ${paymentStatus.status}, esperando...`);
+        }
+
+        return; // Pago procesado exitosamente
+      } catch (error) {
+        // Este tenant no puede acceder al pago, continuar con el siguiente
+        logger.debug(`Tenant ${tenant.id} no pudo acceder al pago ${paymentId}`);
+        continue;
+      }
+    }
+
+    logger.warn(`No se pudo procesar el pago ${paymentId} - no encontrado en ningún tenant`);
   } catch (error) {
     logger.error("Error procesando webhook de Mercado Pago", error);
     // No fallar, ya respondimos 200
-  }
-};
-
-/**
- * Procesa la notificación de pago y actualiza la orden
- * Esta función es llamada internamente cuando se confirma un pago
- */
-export const processPaymentNotification = async (
-  tenantId: string,
-  paymentId: string,
-): Promise<void> => {
-  try {
-    const tenant = await getTenantById(tenantId);
-
-    if (!hasMercadoPagoConfigured(tenant)) {
-      logger.warn(`Tenant ${tenantId} no tiene Mercado Pago configurado`);
-      return;
-    }
-
-    const result = await processPaymentWebhook(tenant, {
-      type: "payment",
-      data: { id: paymentId },
-    });
-
-    if (!result) {
-      return;
-    }
-
-    const { orderId, status } = result;
-
-    // Actualizar el estado de la orden según el estado del pago
-    if (status === "approved") {
-      await updateOrder(tenantId, orderId, {
-        paymentStatus: "pagado",
-        status: "pendiente", // Cambiar a pendiente para que se prepare
-      });
-
-      // TODO: Enviar mensaje de confirmación por WhatsApp
-      // Necesitaríamos el número del cliente de la orden
-      logger.info(`Orden ${orderId} marcada como pagada`);
-    } else if (status === "rejected" || status === "cancelled") {
-      await updateOrder(tenantId, orderId, {
-        paymentStatus: "rechazado",
-      });
-      logger.info(`Pago rechazado para orden ${orderId}`);
-    }
-    // pending, in_process: mantener el estado actual
-  } catch (error) {
-    logger.error("Error procesando notificación de pago", error);
   }
 };

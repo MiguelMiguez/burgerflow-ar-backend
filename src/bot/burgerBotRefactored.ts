@@ -1251,6 +1251,8 @@ const handleOrderConfirmation = async (
       orderType: state.orderType || "pickup",
       deliveryCost: state.orderType === "delivery" ? deliveryCost : 0,
       paymentMethod: state.paymentMethod || "efectivo",
+      // Si es transferencia, el pago está pendiente hasta confirmación de MP
+      paymentStatus: state.paymentMethod === "transferencia" ? "pendiente" : undefined,
     };
 
     if (state.orderType === "delivery") {
@@ -1301,11 +1303,12 @@ const handleOrderConfirmation = async (
 
         await sendMessage(
           phoneNumber,
-          `✅ *¡Pedido registrado!*\n\n` +
+          `⏳ *Pedido pendiente de pago*\n\n` +
           `Número de pedido: *#${order.id.slice(-6).toUpperCase()}*\n\n` +
-          `💳 *Para completar tu pedido, realizá el pago:*\n\n` +
+          `💳 *Para confirmar tu pedido, realizá el pago:*\n\n` +
           `👉 ${preference.initPoint}\n\n` +
-          `Una vez confirmado el pago, comenzaremos a preparar tu pedido.\n\n` +
+          `⚠️ *Tu pedido NO será preparado hasta confirmar el pago.*\n\n` +
+          `Te enviaremos un mensaje cuando recibamos la confirmación.\n\n` +
           `Tiempo estimado después del pago: ${estimatedTime}`,
           tenant,
         );
