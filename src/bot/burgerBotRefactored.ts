@@ -1340,12 +1340,15 @@ const handleOrderConfirmation = async (
       orderType: state.orderType || "pickup",
       deliveryCost: state.orderType === "delivery" ? deliveryCost : 0,
       paymentMethod: state.paymentMethod || "efectivo",
-      // Si es transferencia, el pago está pendiente hasta confirmación de MP
-      paymentStatus:
-        state.paymentMethod === "transferencia" ? "pendiente" : undefined,
-      // Si usa Mercado Pago, la orden queda en pendiente_pago hasta confirmar pago
-      status: useMercadoPago ? "pendiente_pago" : undefined,
     };
+
+    // Agregar campos opcionales solo si tienen valor (Firestore no acepta undefined)
+    if (state.paymentMethod === "transferencia") {
+      orderInput.paymentStatus = "pendiente";
+    }
+    if (useMercadoPago) {
+      orderInput.status = "pendiente_pago";
+    }
 
     if (state.orderType === "delivery") {
       if (state.deliveryAddress)
