@@ -144,6 +144,11 @@ export const handleGetStatus = async (
   }
 };
 
+// Set para rastrear pagos ya procesados (en memoria, para evitar duplicados en ráfagas)
+// En producción con múltiples instancias, usar Redis u otra solución distribuida
+const processedPayments = new Set<string>();
+const PROCESSED_PAYMENT_TTL = 5 * 60 * 1000; // 5 minutos
+
 /**
  * Webhook de Mercado Pago para notificaciones de pago
  * POST /webhooks/mercadopago
@@ -173,7 +178,6 @@ export const handlePaymentWebhook = async (
     if (type === "merchant_order" && paymentId) {
       logger.info(`Webhook de merchant_order: ${paymentId}, procesando...`);
       // Por ahora ignoramos merchant_order ya que el pago debería llegar como notificación separada
-      // TODO: Si es necesario, podemos consultar la merchant_order para obtener el payment_id
       return;
     }
 
@@ -184,6 +188,20 @@ export const handlePaymentWebhook = async (
     }
 
     paymentId = String(paymentId);
+    
+    // Verificar si este pago ya fue procesado recientemente (deduplicación)
+    if (processedPayments.has(paymentId)) {
+      logger.info(`Pago ${paymentId} ya fue procesado recientemente, ignorando webhook duplicado`);
+      return;
+    }
+    
+    // Marcar como procesado
+    processedPayments.add(paymentId);
+    // Limpiar después del TTL
+    setTimeout(() => {
+      processedPayments.delete(paymentId);
+    }, PROCESSED_PAYMENT_TTL);
+    
     logger.info(`Procesando pago ${paymentId}`);
 
     // Buscar la orden usando el paymentId
@@ -226,8 +244,20 @@ export const handlePaymentWebhook = async (
           continue;
         }
 
+        // Verificar si el pedido ya fue procesado (evitar notificaciones duplicadas)
+        if (order.paymentStatus === "pagado") {
+          logger.info(`Orden ${orderId} ya tiene pago confirmado, ignorando webhook duplicado`);
+          return;
+        }
+
         // Actualizar según el estado del pago
         if (paymentStatus.status === "approved") {
+          // Verificar nuevamente que no esté ya pagado (doble check)
+          if (order.status !== "pendiente_pago") {
+            logger.info(`Orden ${orderId} ya no está pendiente de pago (status: ${order.status}), ignorando`);
+            return;
+          }
+          
           await updateOrder(tenant.id, orderId, {
             paymentStatus: "pagado",
             status: "pendiente", // Ahora sí está confirmado para preparar
@@ -308,7 +338,7 @@ export const handlePaymentWebhook = async (
 
 /**
  * Handler para las URLs de retorno de Mercado Pago (success, failure, pending)
- * Redirige al frontend con los parámetros del pago
+ * Redirige a WhatsApp del negocio para continuar la conversación
  */
 export const handlePaymentReturn = async (
   req: Request,
@@ -320,32 +350,54 @@ export const handlePaymentReturn = async (
       status,
       external_reference,
       payment_id,
-      preference_id,
     } = req.query;
 
     // Determinar el estado del pago
     const paymentStatus = status || collection_status || "unknown";
-    const orderId = external_reference || "";
+    const orderId = String(external_reference || "");
 
     logger.info(
       `Retorno de pago: status=${paymentStatus}, orderId=${orderId}, paymentId=${payment_id}`,
     );
 
-    // Redirigir al frontend con los parámetros
+    // Buscar la orden para obtener el número de WhatsApp del negocio
+    if (orderId) {
+      const { listTenants } = await import("../services/tenantService");
+      const tenants = await listTenants();
+
+      for (const tenant of tenants) {
+        try {
+          const order = await getOrderById(tenant.id, orderId);
+          if (order) {
+            // Obtener el número de WhatsApp del negocio
+            const businessPhone = tenant.whatsappNumber || tenant.phone;
+            
+            if (businessPhone) {
+              // Limpiar el número de teléfono (solo dígitos)
+              const cleanPhone = businessPhone.replace(/\D/g, "");
+              
+              // Construir URL de WhatsApp
+              const whatsappUrl = `https://wa.me/${cleanPhone}`;
+              
+              logger.info(`Redirigiendo a WhatsApp del negocio: ${whatsappUrl}`);
+              res.redirect(whatsappUrl);
+              return;
+            }
+            break;
+          }
+        } catch {
+          continue;
+        }
+      }
+    }
+
+    // Fallback: si no se encontró la orden o no hay número de WhatsApp, redirigir al frontend
+    logger.warn("No se pudo determinar el número de WhatsApp, redirigiendo al frontend");
     const frontendUrl = env.frontendUrl || "https://burgerflow.netlify.app";
-    const redirectUrl = new URL("/pedido-completado", frontendUrl);
-
-    redirectUrl.searchParams.set("status", String(paymentStatus));
-    if (orderId) redirectUrl.searchParams.set("order", String(orderId));
-    if (payment_id)
-      redirectUrl.searchParams.set("payment_id", String(payment_id));
-    if (preference_id)
-      redirectUrl.searchParams.set("preference_id", String(preference_id));
-
-    res.redirect(redirectUrl.toString());
+    res.redirect(`${frontendUrl}/pedido-completado?status=${paymentStatus}&order=${orderId}`);
   } catch (error) {
     logger.error("Error en retorno de pago", error);
-    // Redirigir al frontend con error
+    // Fallback al frontend con error
     const frontendUrl = env.frontendUrl || "https://burgerflow.netlify.app";
     res.redirect(`${frontendUrl}?payment_error=true`);
   }
