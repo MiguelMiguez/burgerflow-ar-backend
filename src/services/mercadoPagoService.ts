@@ -392,7 +392,7 @@ export const disconnectMercadoPago = async (
   // Usar FieldValue.delete() para borrar campos en Firestore
   const db = admin.firestore();
   const docRef = db.collection("tenants").doc(tenantId);
-  
+
   await docRef.update({
     mercadoPagoAccessToken: admin.firestore.FieldValue.delete(),
     mercadoPagoRefreshToken: admin.firestore.FieldValue.delete(),

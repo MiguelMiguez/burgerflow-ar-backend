@@ -278,8 +278,8 @@ const handleCustomizationQuestion = async (
     normalized === "no" ||
     normalized.includes("continuar")
   ) {
-    // Continuar al flujo de extras
-    await askExtras(phoneNumber, state, tenant);
+    // Continuar al tipo de entrega (sin preguntar por extras generales)
+    await askOrderType(phoneNumber, state, tenant);
   } else {
     // Respuesta no reconocida
     await sendInteractiveButtons(
@@ -730,8 +730,8 @@ const askForAnotherBurgerCustomization = async (
       tenant,
     );
   } else {
-    // Solo había una hamburguesa, ir a preguntar por extras
-    await askExtras(phoneNumber, state, tenant);
+    // Solo había una hamburguesa, ir al tipo de entrega (sin preguntar por extras generales)
+    await askOrderType(phoneNumber, state, tenant);
   }
 };
 
