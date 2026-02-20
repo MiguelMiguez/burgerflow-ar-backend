@@ -193,24 +193,22 @@ export const deleteProduct = async (
     throw new HttpError(404, "El producto solicitado no existe.");
   }
 
-  // Soft delete - just mark as unavailable
-  await docRef.update({ available: false });
-
-  // Actualizar disponibilidad en el catálogo de WhatsApp
+  // Eliminar del catálogo de WhatsApp antes de borrar
   try {
     const tenant = await getTenantById(tenantId);
     if (hasCatalogConfigured(tenant)) {
-      await updateProductAvailabilityInCatalog(id, false, tenant);
-      logger.info(
-        `Producto ${id} marcado como no disponible en catálogo de WhatsApp`,
-      );
+      await removeProductFromCatalog(id, tenant);
+      logger.info(`Producto ${id} eliminado del catálogo de WhatsApp`);
     }
   } catch (catalogError) {
     logger.warn(
-      `No se pudo actualizar disponibilidad del producto ${id} en catálogo de WhatsApp`,
+      `No se pudo eliminar el producto ${id} del catálogo de WhatsApp`,
       catalogError,
     );
   }
+
+  // Eliminar el producto de la base de datos
+  await docRef.delete();
 };
 
 export const toggleProductAvailability = async (

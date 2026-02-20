@@ -1284,7 +1284,7 @@ const handleOrderConfirmation = async (
     resetConversation(phoneNumber);
     await sendMessage(
       phoneNumber,
-      "Pedido cancelado. ¡Esperamos verte pronto! 🍔",
+      `Pedido cancelado. ¡Esperamos verte pronto en *${tenant.name}*! 🍔`,
       tenant,
     );
     return;
@@ -1425,7 +1425,7 @@ const handleOrderConfirmation = async (
             `⚠️ No pudimos generar el link de pago automático.\n` +
             `Por favor, coordiná el pago con el local.\n\n` +
             `Tiempo estimado: ${estimatedTime}\n\n` +
-            `¡Gracias por elegirnos! 🍔`,
+            `¡Gracias por elegir *${tenant.name}*! 🍔`,
           tenant,
         );
         return;
@@ -1438,7 +1438,7 @@ const handleOrderConfirmation = async (
       `✅ *¡Pedido confirmado!*\n\n` +
         `Número de pedido: *#${order.id.slice(-6).toUpperCase()}*\n\n` +
         `Tiempo estimado: ${estimatedTime}\n\n` +
-        `Te avisaremos cuando tu pedido esté listo. ¡Gracias por elegirnos! 🍔`,
+        `Te avisaremos cuando tu pedido esté listo. ¡Gracias por elegir *${tenant.name}*! 🍔`,
       tenant,
     );
   } catch (error) {
@@ -1489,7 +1489,7 @@ export const processIncomingMessage = async (
     resetConversation(phoneNumber);
     await sendMessage(
       phoneNumber,
-      "Pedido cancelado. ¡Esperamos verte pronto! 🍔",
+      `Pedido cancelado. ¡Esperamos verte pronto en *${tenant.name}*! 🍔`,
       tenant,
     );
     return;

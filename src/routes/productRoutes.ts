@@ -34,7 +34,7 @@ router.patch(
   handleToggleProductAvailability,
 );
 
-// Eliminar producto (soft delete)
+// Eliminar producto permanentemente
 router.delete("/:id", authorize("admin"), handleDeleteProduct);
 
 export default router;
