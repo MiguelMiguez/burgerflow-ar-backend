@@ -2,6 +2,7 @@ import { NextFunction, Request, Response } from "express";
 import {
   createDelivery,
   deleteDelivery,
+  hardDeleteDelivery,
   getDeliveryById,
   listActiveDeliveries,
   listDeliveries,
@@ -17,7 +18,7 @@ const getTenantId = (req: Request): string => {
   if (req.user?.tenantId) {
     return req.user.tenantId;
   }
-  
+
   // Fallback: buscar en params o headers (legacy)
   const tenantId = req.params.tenantId || req.headers["x-tenant-id"];
   if (!tenantId || typeof tenantId !== "string") {
@@ -132,13 +133,19 @@ export const handleDeleteDelivery = async (
   try {
     const tenantId = getTenantId(req);
     const { id } = req.params;
+    const { permanent } = req.query;
 
     if (!id) {
       throw new HttpError(400, "Se requiere el id del delivery.");
     }
 
-    await deleteDelivery(tenantId, id);
-    logger.info(`Delivery desactivado (${id})`);
+    if (permanent === "true") {
+      await hardDeleteDelivery(tenantId, id);
+      logger.info(`Delivery eliminado permanentemente (${id})`);
+    } else {
+      await deleteDelivery(tenantId, id);
+      logger.info(`Delivery desactivado (${id})`);
+    }
     res.status(204).send();
   } catch (error) {
     next(error);

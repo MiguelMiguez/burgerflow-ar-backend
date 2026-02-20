@@ -129,6 +129,20 @@ export const deleteDelivery = async (
   await docRef.update({ isActive: false });
 };
 
+export const hardDeleteDelivery = async (
+  tenantId: string,
+  id: string,
+): Promise<void> => {
+  const docRef = getDocumentRef(tenantId, id);
+  const doc = await docRef.get();
+
+  if (!doc.exists) {
+    throw new HttpError(404, "El delivery solicitado no existe.");
+  }
+
+  await docRef.delete();
+};
+
 export const toggleDeliveryStatus = async (
   tenantId: string,
   id: string,

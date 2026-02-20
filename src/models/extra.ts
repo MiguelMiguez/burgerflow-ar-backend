@@ -3,6 +3,7 @@ export interface Extra {
   tenantId: string;
   name: string;
   price: number;
+  image?: string;
   linkedProductId?: string;
   stockConsumption: number;
   isActive: boolean;
@@ -14,6 +15,7 @@ export interface CreateExtraInput {
   tenantId: string;
   name: string;
   price: number;
+  image?: string;
   linkedProductId?: string;
   stockConsumption?: number;
 }
@@ -21,6 +23,7 @@ export interface CreateExtraInput {
 export interface UpdateExtraInput {
   name?: string;
   price?: number;
+  image?: string;
   linkedProductId?: string;
   stockConsumption?: number;
   isActive?: boolean;
