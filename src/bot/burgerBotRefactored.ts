@@ -307,13 +307,16 @@ const showOrderStatus = async (
   // Mensaje según el estado
   switch (order.status) {
     case "pendiente_pago":
-      message += "⏳ Tu pedido está esperando el pago. Una vez confirmado, lo prepararemos.";
+      message +=
+        "⏳ Tu pedido está esperando el pago. Una vez confirmado, lo prepararemos.";
       break;
     case "pendiente":
-      message += "📋 Tu pedido está siendo revisado por el restaurante. Te notificaremos cuando sea confirmado.";
+      message +=
+        "📋 Tu pedido está siendo revisado por el restaurante. Te notificaremos cuando sea confirmado.";
       break;
     case "confirmado":
-      message += "✅ Tu pedido fue confirmado. Pronto comenzaremos a prepararlo.";
+      message +=
+        "✅ Tu pedido fue confirmado. Pronto comenzaremos a prepararlo.";
       break;
     case "en_preparacion":
       message += "👨‍🍳 Tu pedido está siendo preparado. ¡Ya falta poco!";
@@ -407,39 +410,84 @@ const handleActiveOrderMenuSelection = async (
     return;
   }
 
+  // Detectar saludos comunes
+  const isGreeting = /^(hola|buenas|buen dia|buenos dias|hey|hi|hello)/.test(
+    normalized,
+  );
+
+  if (isGreeting) {
+    // Respuesta amigable para saludos
+    await sendMessage(
+      phoneNumber,
+      `¡Hola! 👋 Veo que tenés un pedido en curso.\n\n` +
+        `📦 *Pedido #${order.id.slice(-6).toUpperCase()}*\n` +
+        `Estado: ${STATUS_LABELS[order.status] || order.status}\n\n` +
+        `¿En qué puedo ayudarte?`,
+      tenant,
+    );
+    await sendInteractiveButtons(
+      phoneNumber,
+      "Seleccioná una opción:",
+      [
+        { id: "btn_order_status", title: "📋 Ver estado" },
+        { id: "btn_order_issue", title: "⚠️ Tengo un problema" },
+        { id: "btn_contact_restaurant", title: "📞 Contactar restaurante" },
+      ],
+      tenant,
+    );
+    return;
+  }
+
   if (
     normalized === "btn_order_status" ||
     normalized === "1" ||
-    normalized.includes("estado")
+    normalized.includes("estado") ||
+    normalized.includes("pedido")
   ) {
     await showOrderStatus(phoneNumber, order, tenant);
   } else if (
     normalized === "btn_order_issue" ||
     normalized === "2" ||
-    normalized.includes("problema")
+    normalized.includes("problema") ||
+    normalized.includes("error") ||
+    normalized.includes("reclamo") ||
+    normalized.includes("queja")
   ) {
     await handleOrderIssue(phoneNumber, order, tenant);
   } else if (
     normalized === "btn_contact_restaurant" ||
     normalized === "3" ||
-    normalized.includes("contactar")
+    normalized.includes("contactar") ||
+    normalized.includes("llamar") ||
+    normalized.includes("hablar")
   ) {
     await handleContactRequest(phoneNumber, order, tenant);
   } else if (
     normalized === "btn_ok" ||
     normalized.includes("bien") ||
-    normalized.includes("ok")
+    normalized.includes("ok") ||
+    normalized.includes("gracias") ||
+    normalized.includes("nada")
   ) {
     await sendMessage(
       phoneNumber,
-      `¡Perfecto! Si necesitás algo más, no dudes en escribirnos. 😊`,
+      `¡Perfecto! Si necesitás algo más, no dudes en escribirnos. 😊\n\n` +
+        `Te avisaremos sobre cualquier actualización de tu pedido.`,
       tenant,
     );
     resetConversation(phoneNumber);
   } else {
+    // Mensaje más amigable para respuestas no reconocidas
+    await sendMessage(
+      phoneNumber,
+      `No estoy seguro de entender tu mensaje. 🤔\n\n` +
+        `Recordá que tenés un *pedido en curso #${order.id.slice(-6).toUpperCase()}*.\n\n` +
+        `¿En qué puedo ayudarte?`,
+      tenant,
+    );
     await sendInteractiveButtons(
       phoneNumber,
-      "Por favor, seleccioná una opción:",
+      "Seleccioná una opción:",
       [
         { id: "btn_order_status", title: "📋 Ver estado" },
         { id: "btn_order_issue", title: "⚠️ Tengo un problema" },
@@ -813,6 +861,7 @@ const handleIngredientToAdd = async (
 
 /**
  * Muestra los ingredientes que se pueden QUITAR de la hamburguesa
+ * Incluye: ingredientes originales removibles + ingredientes agregados previamente
  */
 const showIngredientsToRemove = async (
   phoneNumber: string,
@@ -822,7 +871,7 @@ const showIngredientsToRemove = async (
   const burgerIndex = state.currentBurgerIndex ?? 0;
   const burger = state.cart[burgerIndex];
 
-  // Obtener ingredientes removibles del producto
+  // Obtener ingredientes removibles del producto (originales)
   const removableIngredients = burger.product.ingredients.filter(
     (ing) => ing.isRemovable,
   );
@@ -832,11 +881,17 @@ const showIngredientsToRemove = async (
     .filter((c) => c.type === "quitar")
     .map((c) => c.ingredientId);
 
-  const availableToRemove = removableIngredients.filter(
+  const availableOriginalToRemove = removableIngredients.filter(
     (ing) => !alreadyRemoved.includes(ing.ingredientId),
   );
 
-  if (availableToRemove.length === 0) {
+  // Obtener ingredientes que fueron agregados (extras) y pueden ser removidos
+  const addedIngredients = burger.customizations.filter(
+    (c) => c.type === "agregar",
+  );
+
+  // Si no hay nada para quitar
+  if (availableOriginalToRemove.length === 0 && addedIngredients.length === 0) {
     await sendMessage(
       phoneNumber,
       "No hay más ingredientes que puedas quitar de esta hamburguesa.",
@@ -851,9 +906,19 @@ const showIngredientsToRemove = async (
     step: "selectingIngredientToRemove",
   });
 
-  const ingredientsList = availableToRemove.map(
-    (ing, index) => `*${index + 1}.* ${ing.ingredientName}`,
-  );
+  // Construir lista combinada
+  const ingredientsList: string[] = [];
+
+  // Primero los ingredientes originales
+  availableOriginalToRemove.forEach((ing, index) => {
+    ingredientsList.push(`*${index + 1}.* ${ing.ingredientName}`);
+  });
+
+  // Luego los ingredientes agregados (con indicador)
+  addedIngredients.forEach((ing, index) => {
+    const listIndex = availableOriginalToRemove.length + index + 1;
+    ingredientsList.push(`*${listIndex}.* ${ing.ingredientName} _(agregado)_`);
+  });
 
   await sendMessage(
     phoneNumber,
@@ -886,47 +951,78 @@ const handleIngredientToRemove = async (
   const burgerIndex = state.currentBurgerIndex ?? 0;
   const burger = state.cart[burgerIndex];
 
-  // Obtener ingredientes removibles
+  // Obtener ingredientes removibles del producto (originales)
   const removableIngredients = burger.product.ingredients.filter(
     (ing) => ing.isRemovable,
   );
   const alreadyRemoved = burger.customizations
     .filter((c) => c.type === "quitar")
     .map((c) => c.ingredientId);
-  const availableToRemove = removableIngredients.filter(
+  const availableOriginalToRemove = removableIngredients.filter(
     (ing) => !alreadyRemoved.includes(ing.ingredientId),
   );
 
+  // Obtener ingredientes agregados
+  const addedIngredients = burger.customizations.filter(
+    (c) => c.type === "agregar",
+  );
+
+  const totalOptions =
+    availableOriginalToRemove.length + addedIngredients.length;
   const index = parseInt(text.trim(), 10) - 1;
 
-  if (isNaN(index) || index < 0 || index >= availableToRemove.length) {
+  if (isNaN(index) || index < 0 || index >= totalOptions) {
     await sendMessage(
       phoneNumber,
-      `Por favor, escribí un número válido entre 1 y ${availableToRemove.length}, o *volver*.`,
+      `Por favor, escribí un número válido entre 1 y ${totalOptions}, o *volver*.`,
       tenant,
     );
     return;
   }
 
-  const selectedIngredient = availableToRemove[index];
-
-  // Crear la customización
-  const customization: OrderCustomization = {
-    ingredientId: selectedIngredient.ingredientId,
-    ingredientName: selectedIngredient.ingredientName,
-    type: "quitar",
-    extraPrice: 0,
-  };
-
-  // Agregar al carrito
   const updatedCart = [...state.cart];
-  updatedCart[burgerIndex].customizations.push(customization);
 
-  await sendMessage(
-    phoneNumber,
-    `❌ Quitaste *${selectedIngredient.ingredientName}*`,
-    tenant,
-  );
+  // Determinar si es un ingrediente original o agregado
+  if (index < availableOriginalToRemove.length) {
+    // Es un ingrediente original - agregar customización de "quitar"
+    const selectedIngredient = availableOriginalToRemove[index];
+
+    const customization: OrderCustomization = {
+      ingredientId: selectedIngredient.ingredientId,
+      ingredientName: selectedIngredient.ingredientName,
+      type: "quitar",
+      extraPrice: 0,
+    };
+
+    updatedCart[burgerIndex].customizations.push(customization);
+
+    await sendMessage(
+      phoneNumber,
+      `❌ Quitaste *${selectedIngredient.ingredientName}*`,
+      tenant,
+    );
+  } else {
+    // Es un ingrediente agregado - remover la customización de "agregar"
+    const addedIndex = index - availableOriginalToRemove.length;
+    const ingredientToRemove = addedIngredients[addedIndex];
+
+    // Filtrar para remover el ingrediente agregado
+    updatedCart[burgerIndex].customizations = updatedCart[
+      burgerIndex
+    ].customizations.filter(
+      (c) =>
+        !(
+          c.type === "agregar" &&
+          c.ingredientId === ingredientToRemove.ingredientId
+        ),
+    );
+
+    await sendMessage(
+      phoneNumber,
+      `❌ Removiste el extra *${ingredientToRemove.ingredientName}*`,
+      tenant,
+    );
+  }
 
   setConversationState(phoneNumber, {
     ...state,
@@ -1165,7 +1261,8 @@ const askOrderType = async (
 ): Promise<void> => {
   // Lee explícitamente la configuración del restaurante
   // Solo si está explícitamente en 'true' o no está definido (default true)
-  const hasDelivery = tenant.hasDelivery === true || tenant.hasDelivery === undefined;
+  const hasDelivery =
+    tenant.hasDelivery === true || tenant.hasDelivery === undefined;
   const hasPickup = tenant.hasPickup === true || tenant.hasPickup === undefined;
 
   // Si ninguna opción está disponible, mostrar mensaje de error
@@ -1276,8 +1373,7 @@ const handleDeliveryFlow = async (
       });
 
       const zonesList = zones.map(
-        (zone, index) =>
-          `*${index + 1}.* ${zone.name} - ${formatPrice(zone.price)}`,
+        (zone, index) => `*${index + 1}.* ${zone.name}`,
       );
 
       await sendMessage(
@@ -1356,7 +1452,7 @@ const handleDeliveryZoneSelection = async (
 
     await sendMessage(
       phoneNumber,
-      `Zona: *${selectedZone.name}* (Envío: ${formatPrice(selectedZone.price)})\n\n` +
+      `Zona: *${selectedZone.name}*\n\n` +
         `Por favor, escribí tu *dirección completa*.\n_(Calle, número, piso/depto)_`,
       tenant,
     );
@@ -1766,7 +1862,10 @@ export const processIncomingMessage = async (
     case "idle":
       // Verificar si el cliente tiene pedido activo
       try {
-        const activeOrders = await getActiveOrdersByPhone(tenant.id, phoneNumber);
+        const activeOrders = await getActiveOrdersByPhone(
+          tenant.id,
+          phoneNumber,
+        );
         if (activeOrders.length > 0) {
           // Mostrar menú de pedido activo
           await showActiveOrderMenu(phoneNumber, activeOrders[0], tenant);
@@ -1839,7 +1938,10 @@ export const processIncomingMessage = async (
     default:
       // Verificar si el cliente tiene pedido activo antes de enviar bienvenida
       try {
-        const activeOrders = await getActiveOrdersByPhone(tenant.id, phoneNumber);
+        const activeOrders = await getActiveOrdersByPhone(
+          tenant.id,
+          phoneNumber,
+        );
         if (activeOrders.length > 0) {
           await showActiveOrderMenu(phoneNumber, activeOrders[0], tenant);
           return;
@@ -1950,16 +2052,6 @@ export const processCatalogOrder = async (
       return;
     }
 
-    // Construir mensaje de confirmación
-    let confirmMessage = "🛒 *Recibimos tu pedido:*\n\n";
-    for (const item of productsAdded) {
-      confirmMessage += `• ${item.quantity}x ${item.name}\n`;
-    }
-
-    if (productsNotFound.length > 0) {
-      confirmMessage += `\n⚠️ _${productsNotFound.length} producto(s) no estaban disponibles._\n`;
-    }
-
     // Guardar estado con el carrito
     const newState: ConversationState = {
       ...state,
@@ -1969,9 +2061,16 @@ export const processCatalogOrder = async (
 
     setConversationState(phoneNumber, newState);
 
-    await sendMessage(phoneNumber, confirmMessage, tenant);
+    // Notificar si hubo productos no disponibles
+    if (productsNotFound.length > 0) {
+      await sendMessage(
+        phoneNumber,
+        `⚠️ _${productsNotFound.length} producto(s) no estaban disponibles y fueron removidos._`,
+        tenant,
+      );
+    }
 
-    // Ir al flujo de personalización
+    // Ir directamente al flujo de personalización (que ya muestra el carrito)
     await askCustomization(phoneNumber, newState, tenant);
   } catch (error) {
     logger.error("Error procesando orden de catálogo", error);

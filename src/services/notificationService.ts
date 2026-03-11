@@ -39,9 +39,9 @@ const STATUS_MESSAGES: Record<OrderStatus, (order: Order) => string> = {
       );
     }
     return (
-      `🎉 *Pedido #${order.id.slice(-6).toUpperCase()} listo*\n\n` +
+      `🎉 *Pedido #${order.id.slice(-6).toUpperCase()} listo para retirar*\n\n` +
       `${order.customerName}, tu pedido está listo para retirar.\n` +
-      `¡Te esperamos! 📍`
+      `¡Te esperamos en el local! 📍`
     );
   },
 
@@ -51,11 +51,22 @@ const STATUS_MESSAGES: Record<OrderStatus, (order: Order) => string> = {
     `Dirección: ${order.deliveryAddress || "No especificada"}\n\n` +
     `¡Estará llegando pronto! 📦`,
 
-  entregado: (order) =>
-    `🎊 *Pedido #${order.id.slice(-6).toUpperCase()} entregado*\n\n` +
-    `¡Gracias por tu compra, ${order.customerName}!\n` +
-    `Esperamos que disfrutes tu comida. 🍔\n\n` +
-    `¡Hasta la próxima! 👋`,
+  entregado: (order) => {
+    if (order.orderType === "pickup") {
+      return (
+        `🎊 *Pedido #${order.id.slice(-6).toUpperCase()} retirado*\n\n` +
+        `¡Gracias por tu compra, ${order.customerName}!\n` +
+        `Esperamos que disfrutes tu comida. 🍔\n\n` +
+        `¡Hasta la próxima! 👋`
+      );
+    }
+    return (
+      `🎊 *Pedido #${order.id.slice(-6).toUpperCase()} entregado*\n\n` +
+      `¡Gracias por tu compra, ${order.customerName}!\n` +
+      `Esperamos que disfrutes tu comida. 🍔\n\n` +
+      `¡Hasta la próxima! 👋`
+    );
+  },
 
   cancelado: (order) =>
     `❌ *Pedido #${order.id.slice(-6).toUpperCase()} cancelado*\n\n` +
