@@ -99,6 +99,32 @@ export const listOrdersByStatus = async (
   return snapshot.docs.map(mapSnapshotToOrder);
 };
 
+/**
+ * Obtiene los pedidos activos de un cliente por su número de teléfono
+ * Estados activos: pendiente_pago, pendiente, confirmado, en_preparacion, listo, en_camino
+ */
+export const getActiveOrdersByPhone = async (
+  tenantId: string,
+  customerPhone: string,
+): Promise<Order[]> => {
+  const activeStatuses: OrderStatus[] = [
+    "pendiente_pago",
+    "pendiente",
+    "confirmado",
+    "en_preparacion",
+    "listo",
+    "en_camino",
+  ];
+
+  const snapshot = await getCollection(tenantId)
+    .where("customerPhone", "==", customerPhone)
+    .where("status", "in", activeStatuses)
+    .orderBy("createdAt", "desc")
+    .get();
+
+  return snapshot.docs.map(mapSnapshotToOrder);
+};
+
 export const listOrdersByDate = async (
   tenantId: string,
   date: string,

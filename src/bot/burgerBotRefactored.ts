@@ -1,6 +1,6 @@
 import { logger } from "../utils/logger";
 import { sendMessage, sendInteractiveButtons } from "../services/metaService";
-import { createOrder } from "../services/orderService";
+import { createOrder, getActiveOrdersByPhone } from "../services/orderService";
 import { getProductById } from "../services/productService";
 import {
   listActiveDeliveryZones,
@@ -12,12 +12,17 @@ import {
   createPaymentPreference,
   hasMercadoPagoConfigured,
 } from "../services/mercadoPagoService";
+import {
+  sendOrderIssueNotification,
+  sendContactRequestNotification,
+} from "../services/notificationService";
 import type { Tenant } from "../models/tenant";
 import type { Product } from "../models/product";
 import type { DeliveryZone } from "../models/deliveryZone";
 import type { Ingredient } from "../models/ingredient";
 import type { Extra } from "../models/extra";
 import type {
+  Order,
   OrderItem,
   OrderCustomization,
   OrderExtra,
@@ -46,6 +51,7 @@ import { isHttpError } from "../utils/httpError";
 
 type ConversationStep =
   | "idle"
+  | "activeOrderMenu" // Menú para clientes con pedido activo
   | "askingCustomization" // ¿Deseas personalizar?
   | "selectingBurgerToCustomize" // ¿Cuál hamburguesa personalizar?
   | "selectingCustomizationAction" // Agregar/Quitar/Continuar
@@ -87,6 +93,7 @@ interface ConversationState {
   deliveryNotes?: string;
   paymentMethod?: "efectivo" | "transferencia";
   customerName?: string;
+  activeOrder?: Order; // Pedido activo del cliente (si existe)
 }
 
 const conversations = new Map<string, ConversationState>();
@@ -211,6 +218,236 @@ const sendWelcomeMessage = async (
       `Una vez que elijas tus productos, te ayudo a completar el pedido. ¡Gracias por elegirnos!`,
     tenant,
   );
+};
+
+// ============================================================================
+// MANEJO DE PEDIDOS ACTIVOS
+// ============================================================================
+
+const STATUS_LABELS: Record<string, string> = {
+  pendiente_pago: "⏳ Esperando pago",
+  pendiente: "📋 Esperando confirmación del restaurante",
+  confirmado: "✅ Confirmado - próximamente en preparación",
+  en_preparacion: "👨‍🍳 En preparación",
+  listo: "🎉 Listo para entrega/retiro",
+  en_camino: "🏍️ En camino",
+};
+
+/**
+ * Muestra el menú de opciones para clientes con pedido activo
+ */
+const showActiveOrderMenu = async (
+  phoneNumber: string,
+  order: Order,
+  tenant: Tenant,
+): Promise<void> => {
+  const statusLabel = STATUS_LABELS[order.status] || order.status;
+  const orderTypeLabel =
+    order.orderType === "delivery" ? "🚗 Delivery" : "🏪 Retiro en local";
+
+  const state = getConversationState(phoneNumber, tenant.id);
+  setConversationState(phoneNumber, {
+    ...state,
+    step: "activeOrderMenu",
+    activeOrder: order,
+  });
+
+  await sendMessage(
+    phoneNumber,
+    `Hola! 👋 Ya tenés un pedido en curso:\n\n` +
+      `📦 *Pedido #${order.id.slice(-6).toUpperCase()}*\n` +
+      `${statusLabel}\n` +
+      `${orderTypeLabel}\n` +
+      `💰 Total: ${formatPrice(order.total)}\n\n` +
+      `¿En qué podemos ayudarte?`,
+    tenant,
+  );
+
+  await sendInteractiveButtons(
+    phoneNumber,
+    "Seleccioná una opción:",
+    [
+      { id: "btn_order_status", title: "📋 Ver estado" },
+      { id: "btn_order_issue", title: "⚠️ Tengo un problema" },
+      { id: "btn_contact_restaurant", title: "📞 Contactar restaurante" },
+    ],
+    tenant,
+  );
+};
+
+/**
+ * Muestra el estado detallado del pedido activo
+ */
+const showOrderStatus = async (
+  phoneNumber: string,
+  order: Order,
+  tenant: Tenant,
+): Promise<void> => {
+  const statusLabel = STATUS_LABELS[order.status] || order.status;
+  const orderTypeLabel =
+    order.orderType === "delivery" ? "🚗 Delivery" : "🏪 Retiro en local";
+
+  const itemsList = order.items
+    .map((item) => `• ${item.quantity}x ${item.productName}`)
+    .join("\n");
+
+  let message =
+    `📦 *Estado de tu Pedido #${order.id.slice(-6).toUpperCase()}*\n\n` +
+    `*Estado:* ${statusLabel}\n` +
+    `*Tipo:* ${orderTypeLabel}\n`;
+
+  if (order.orderType === "delivery" && order.deliveryAddress) {
+    message += `*Dirección:* ${order.deliveryAddress}\n`;
+  }
+
+  message +=
+    `\n*Productos:*\n${itemsList}\n\n` +
+    `💰 *Total:* ${formatPrice(order.total)}\n\n`;
+
+  // Mensaje según el estado
+  switch (order.status) {
+    case "pendiente_pago":
+      message += "⏳ Tu pedido está esperando el pago. Una vez confirmado, lo prepararemos.";
+      break;
+    case "pendiente":
+      message += "📋 Tu pedido está siendo revisado por el restaurante. Te notificaremos cuando sea confirmado.";
+      break;
+    case "confirmado":
+      message += "✅ Tu pedido fue confirmado. Pronto comenzaremos a prepararlo.";
+      break;
+    case "en_preparacion":
+      message += "👨‍🍳 Tu pedido está siendo preparado. ¡Ya falta poco!";
+      break;
+    case "listo":
+      message +=
+        order.orderType === "delivery"
+          ? "🎉 Tu pedido está listo y esperando al repartidor."
+          : "🎉 Tu pedido está listo para retirar. ¡Te esperamos!";
+      break;
+    case "en_camino":
+      message += "🏍️ Tu pedido está en camino. ¡Pronto llegará!";
+      break;
+  }
+
+  await sendMessage(phoneNumber, message, tenant);
+
+  await sendInteractiveButtons(
+    phoneNumber,
+    "¿Necesitás algo más?",
+    [
+      { id: "btn_order_issue", title: "⚠️ Tengo un problema" },
+      { id: "btn_contact_restaurant", title: "📞 Contactar restaurante" },
+      { id: "btn_ok", title: "✅ Todo bien" },
+    ],
+    tenant,
+  );
+};
+
+/**
+ * Maneja el reporte de problema con el pedido
+ */
+const handleOrderIssue = async (
+  phoneNumber: string,
+  order: Order,
+  tenant: Tenant,
+): Promise<void> => {
+  // Enviar notificación al restaurante
+  await sendOrderIssueNotification(order, phoneNumber);
+
+  await sendMessage(
+    phoneNumber,
+    `⚠️ *Problema reportado*\n\n` +
+      `Hemos notificado al restaurante sobre tu inconveniente con el pedido *#${order.id.slice(-6).toUpperCase()}*.\n\n` +
+      `Un representante se comunicará contigo lo antes posible.\n\n` +
+      `¡Gracias por tu paciencia! 🙏`,
+    tenant,
+  );
+
+  resetConversation(phoneNumber);
+};
+
+/**
+ * Maneja la solicitud de contacto con el restaurante
+ */
+const handleContactRequest = async (
+  phoneNumber: string,
+  order: Order,
+  tenant: Tenant,
+): Promise<void> => {
+  // Enviar notificación al restaurante
+  await sendContactRequestNotification(order, phoneNumber);
+
+  await sendMessage(
+    phoneNumber,
+    `📞 *Solicitud de contacto enviada*\n\n` +
+      `Hemos notificado al restaurante que deseas comunicarte sobre el pedido *#${order.id.slice(-6).toUpperCase()}*.\n\n` +
+      `Un representante se comunicará contigo pronto.\n\n` +
+      `¡Gracias por tu paciencia! 🙏`,
+    tenant,
+  );
+
+  resetConversation(phoneNumber);
+};
+
+/**
+ * Maneja las selecciones del menú de pedido activo
+ */
+const handleActiveOrderMenuSelection = async (
+  phoneNumber: string,
+  text: string,
+  state: ConversationState,
+  tenant: Tenant,
+): Promise<void> => {
+  const normalized = text.trim().toLowerCase();
+  const order = state.activeOrder;
+
+  if (!order) {
+    resetConversation(phoneNumber);
+    await sendWelcomeMessage(phoneNumber, tenant);
+    return;
+  }
+
+  if (
+    normalized === "btn_order_status" ||
+    normalized === "1" ||
+    normalized.includes("estado")
+  ) {
+    await showOrderStatus(phoneNumber, order, tenant);
+  } else if (
+    normalized === "btn_order_issue" ||
+    normalized === "2" ||
+    normalized.includes("problema")
+  ) {
+    await handleOrderIssue(phoneNumber, order, tenant);
+  } else if (
+    normalized === "btn_contact_restaurant" ||
+    normalized === "3" ||
+    normalized.includes("contactar")
+  ) {
+    await handleContactRequest(phoneNumber, order, tenant);
+  } else if (
+    normalized === "btn_ok" ||
+    normalized.includes("bien") ||
+    normalized.includes("ok")
+  ) {
+    await sendMessage(
+      phoneNumber,
+      `¡Perfecto! Si necesitás algo más, no dudes en escribirnos. 😊`,
+      tenant,
+    );
+    resetConversation(phoneNumber);
+  } else {
+    await sendInteractiveButtons(
+      phoneNumber,
+      "Por favor, seleccioná una opción:",
+      [
+        { id: "btn_order_status", title: "📋 Ver estado" },
+        { id: "btn_order_issue", title: "⚠️ Tengo un problema" },
+        { id: "btn_contact_restaurant", title: "📞 Contactar restaurante" },
+      ],
+      tenant,
+    );
+  }
 };
 
 // ============================================================================
@@ -926,8 +1163,22 @@ const askOrderType = async (
   state: ConversationState,
   tenant: Tenant,
 ): Promise<void> => {
-  const hasDelivery = tenant.hasDelivery !== false;
-  const hasPickup = tenant.hasPickup !== false;
+  // Lee explícitamente la configuración del restaurante
+  // Solo si está explícitamente en 'true' o no está definido (default true)
+  const hasDelivery = tenant.hasDelivery === true || tenant.hasDelivery === undefined;
+  const hasPickup = tenant.hasPickup === true || tenant.hasPickup === undefined;
+
+  // Si ninguna opción está disponible, mostrar mensaje de error
+  if (!hasDelivery && !hasPickup) {
+    await sendMessage(
+      phoneNumber,
+      `Lo sentimos, el restaurante no tiene opciones de entrega configuradas en este momento. 😔\n\n` +
+        `Por favor, contactá directamente al local para realizar tu pedido.`,
+      tenant,
+    );
+    resetConversation(phoneNumber);
+    return;
+  }
 
   if (hasDelivery && hasPickup) {
     setConversationState(phoneNumber, {
@@ -945,9 +1196,20 @@ const askOrderType = async (
       tenant,
     );
   } else if (hasDelivery) {
+    // Solo delivery disponible
+    await sendMessage(
+      phoneNumber,
+      `📦 Este restaurante solo ofrece *delivery*.\nContinuamos con el envío a domicilio.`,
+      tenant,
+    );
     await handleDeliveryFlow(phoneNumber, state, tenant);
   } else {
-    // Solo pickup
+    // Solo pickup disponible
+    await sendMessage(
+      phoneNumber,
+      `🏪 Este restaurante solo ofrece *retiro en local*.\nContinuamos con el retiro.`,
+      tenant,
+    );
     await askPaymentMethod(
       phoneNumber,
       { ...state, orderType: "pickup" },
@@ -1410,8 +1672,8 @@ const handleOrderConfirmation = async (
             `💳 *Para confirmar tu pedido, realizá el pago:*\n\n` +
             `👉 ${preference.initPoint}\n\n` +
             `⚠️ *Tu pedido NO será preparado hasta confirmar el pago.*\n\n` +
-            `Te enviaremos un mensaje cuando recibamos la confirmación.\n\n` +
-            `Tiempo estimado después del pago: ${estimatedTime}`,
+            `Una vez recibido el pago, el restaurante confirmará tu pedido.\n\n` +
+            `Tiempo estimado después de la confirmación: ${estimatedTime}`,
           tenant,
         );
         return;
@@ -1420,11 +1682,13 @@ const handleOrderConfirmation = async (
         // Si falla MP, mostrar datos de transferencia manual
         await sendMessage(
           phoneNumber,
-          `✅ *¡Pedido confirmado!*\n\n` +
+          `📋 *¡Pedido recibido!*\n\n` +
             `Número de pedido: *#${order.id.slice(-6).toUpperCase()}*\n\n` +
             `⚠️ No pudimos generar el link de pago automático.\n` +
             `Por favor, coordiná el pago con el local.\n\n` +
-            `Tiempo estimado: ${estimatedTime}\n\n` +
+            `⏳ *Esperando confirmación del restaurante...*\n\n` +
+            `Te notificaremos cuando sea confirmado.\n` +
+            `Tiempo estimado después de la confirmación: ${estimatedTime}\n\n` +
             `¡Gracias por elegir *${tenant.name}*! 🍔`,
           tenant,
         );
@@ -1435,10 +1699,12 @@ const handleOrderConfirmation = async (
     // Pago en efectivo o sin MP configurado
     await sendMessage(
       phoneNumber,
-      `✅ *¡Pedido confirmado!*\n\n` +
+      `📋 *¡Pedido recibido!*\n\n` +
         `Número de pedido: *#${order.id.slice(-6).toUpperCase()}*\n\n` +
-        `Tiempo estimado: ${estimatedTime}\n\n` +
-        `Te avisaremos cuando tu pedido esté listo. ¡Gracias por elegir *${tenant.name}*! 🍔`,
+        `⏳ *Esperando confirmación del restaurante...*\n\n` +
+        `Te notificaremos cuando tu pedido sea confirmado y comience a prepararse.\n\n` +
+        `Tiempo estimado después de la confirmación: ${estimatedTime}\n\n` +
+        `¡Gracias por elegir *${tenant.name}*! 🍔`,
       tenant,
     );
   } catch (error) {
@@ -1498,8 +1764,24 @@ export const processIncomingMessage = async (
   // Manejar según el paso actual
   switch (state.step) {
     case "idle":
-      // Cualquier mensaje cuando está idle → enviar bienvenida
+      // Verificar si el cliente tiene pedido activo
+      try {
+        const activeOrders = await getActiveOrdersByPhone(tenant.id, phoneNumber);
+        if (activeOrders.length > 0) {
+          // Mostrar menú de pedido activo
+          await showActiveOrderMenu(phoneNumber, activeOrders[0], tenant);
+          return;
+        }
+      } catch (error) {
+        logger.warn("Error al verificar pedidos activos", error);
+        // Continuar con el flujo normal si hay error
+      }
+      // Cualquier mensaje cuando está idle y no hay pedido activo → enviar bienvenida
       await sendWelcomeMessage(phoneNumber, tenant, contactName);
+      break;
+
+    case "activeOrderMenu":
+      await handleActiveOrderMenuSelection(phoneNumber, text, state, tenant);
       break;
 
     case "askingCustomization":
@@ -1555,6 +1837,16 @@ export const processIncomingMessage = async (
       break;
 
     default:
+      // Verificar si el cliente tiene pedido activo antes de enviar bienvenida
+      try {
+        const activeOrders = await getActiveOrdersByPhone(tenant.id, phoneNumber);
+        if (activeOrders.length > 0) {
+          await showActiveOrderMenu(phoneNumber, activeOrders[0], tenant);
+          return;
+        }
+      } catch (error) {
+        logger.warn("Error al verificar pedidos activos", error);
+      }
       await sendWelcomeMessage(phoneNumber, tenant, contactName);
   }
 };
@@ -1590,6 +1882,23 @@ export const processCatalogOrder = async (
   logger.info(
     `Procesando orden de catálogo de ${phoneNumber}: ${productItems.length} producto(s)`,
   );
+
+  // Verificar si el cliente tiene un pedido activo
+  try {
+    const activeOrders = await getActiveOrdersByPhone(tenant.id, phoneNumber);
+    if (activeOrders.length > 0) {
+      await sendMessage(
+        phoneNumber,
+        `⚠️ Ya tenés un pedido en curso. No podés realizar otro pedido hasta que el actual sea completado o cancelado.`,
+        tenant,
+      );
+      await showActiveOrderMenu(phoneNumber, activeOrders[0], tenant);
+      return;
+    }
+  } catch (error) {
+    logger.warn("Error al verificar pedidos activos", error);
+    // Continuar con el flujo normal si hay error
+  }
 
   if (productItems.length === 0) {
     await sendMessage(

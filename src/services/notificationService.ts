@@ -248,3 +248,103 @@ export const sendNewOrderNotification = async (
     return false;
   }
 };
+
+/**
+ * Envía una notificación al restaurante cuando un cliente reporta un problema con su pedido
+ */
+export const sendOrderIssueNotification = async (
+  order: Order,
+  customerPhone: string,
+): Promise<boolean> => {
+  try {
+    const tenant = await getTenantById(order.tenantId);
+
+    if (!tenant) {
+      logger.warn(
+        `No se encontró tenant ${order.tenantId} para enviar notificación de problema`,
+      );
+      return false;
+    }
+
+    if (!tenant.notificationPhone) {
+      logger.debug(
+        `Tenant ${tenant.name} no tiene teléfono de notificación configurado`,
+      );
+      return false;
+    }
+
+    if (!tenant.metaPhoneNumberId || !tenant.metaAccessToken) {
+      logger.warn(
+        `Tenant ${tenant.name} no tiene credenciales de Meta configuradas`,
+      );
+      return false;
+    }
+
+    const message =
+      `⚠️ *PROBLEMA REPORTADO - PEDIDO #${order.id.slice(-6).toUpperCase()}*\n\n` +
+      `👤 *Cliente:* ${order.customerName}\n` +
+      `📱 *Teléfono:* ${customerPhone}\n\n` +
+      `El cliente ha reportado un problema con su pedido y necesita ser contactado.\n\n` +
+      `Por favor, comunícate con el cliente lo antes posible.`;
+
+    await sendMessage(tenant.notificationPhone, message, tenant);
+
+    logger.info(
+      `Notificación de problema enviada a ${tenant.notificationPhone} - Pedido #${order.id.slice(-6)}`,
+    );
+    return true;
+  } catch (error) {
+    logger.error(`Error al enviar notificación de problema al admin`, error);
+    return false;
+  }
+};
+
+/**
+ * Envía una notificación al restaurante cuando un cliente quiere contactarse
+ */
+export const sendContactRequestNotification = async (
+  order: Order,
+  customerPhone: string,
+): Promise<boolean> => {
+  try {
+    const tenant = await getTenantById(order.tenantId);
+
+    if (!tenant) {
+      logger.warn(
+        `No se encontró tenant ${order.tenantId} para enviar notificación de contacto`,
+      );
+      return false;
+    }
+
+    if (!tenant.notificationPhone) {
+      logger.debug(
+        `Tenant ${tenant.name} no tiene teléfono de notificación configurado`,
+      );
+      return false;
+    }
+
+    if (!tenant.metaPhoneNumberId || !tenant.metaAccessToken) {
+      logger.warn(
+        `Tenant ${tenant.name} no tiene credenciales de Meta configuradas`,
+      );
+      return false;
+    }
+
+    const message =
+      `📞 *SOLICITUD DE CONTACTO - PEDIDO #${order.id.slice(-6).toUpperCase()}*\n\n` +
+      `👤 *Cliente:* ${order.customerName}\n` +
+      `📱 *Teléfono:* ${customerPhone}\n\n` +
+      `El cliente desea comunicarse con el restaurante sobre su pedido.\n\n` +
+      `Por favor, contacta al cliente.`;
+
+    await sendMessage(tenant.notificationPhone, message, tenant);
+
+    logger.info(
+      `Notificación de contacto enviada a ${tenant.notificationPhone} - Pedido #${order.id.slice(-6)}`,
+    );
+    return true;
+  } catch (error) {
+    logger.error(`Error al enviar notificación de contacto al admin`, error);
+    return false;
+  }
+};
