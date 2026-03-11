@@ -114,6 +114,14 @@ export const sendOrderStatusNotification = async (
   newStatus: OrderStatus,
 ): Promise<boolean> => {
   try {
+    // Para pedidos de retiro en local, no enviar notificación de "en_camino"
+    if (order.orderType === "pickup" && newStatus === "en_camino") {
+      logger.debug(
+        `Omitiendo notificación de en_camino para pedido pickup #${order.id.slice(-6)}`,
+      );
+      return true;
+    }
+
     // Obtener el tenant del pedido
     const tenant = await getTenantById(order.tenantId);
 
@@ -140,7 +148,16 @@ export const sendOrderStatusNotification = async (
 
     // Crear orden temporal con el nuevo estado para generar el mensaje
     const orderWithNewStatus = { ...order, status: newStatus };
-    const message = messageGenerator(orderWithNewStatus);
+    let message = messageGenerator(orderWithNewStatus);
+
+    // Agregar invitación a redes sociales en el mensaje de entregado
+    if (newStatus === "entregado" && tenant.instagramUsername) {
+      const igUsername = tenant.instagramUsername.replace(/^@/, ""); // Remover @ si lo tiene
+      message +=
+        `\n\n📸 *¡Compartí tu experiencia!*\n` +
+        `Etiquetanos en tu historia de Instagram:\n` +
+        `https://instagram.com/${igUsername}`;
+    }
 
     // Usar customerPhone directamente (sin formato @c.us)
     await sendMessage(order.customerPhone, message, tenant);

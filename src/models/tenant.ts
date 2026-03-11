@@ -8,6 +8,8 @@ export interface CreateTenantInput {
   notificationPhone?: string; // Teléfono para notificaciones de pedidos nuevos
   hasPickup?: boolean; // Retiro en local activado/desactivado
   hasDelivery?: boolean; // Delivery activado/desactivado
+  // Redes sociales
+  instagramUsername?: string; // Usuario de Instagram (sin @)
   // Meta WhatsApp Business API credentials
   metaPhoneNumberId?: string;
   metaAccessToken?: string;
@@ -31,6 +33,8 @@ export interface UpdateTenantInput {
   hasPickup?: boolean;
   hasDelivery?: boolean;
   isActive?: boolean;
+  // Redes sociales
+  instagramUsername?: string;
   // Meta WhatsApp Business API credentials
   metaPhoneNumberId?: string;
   metaAccessToken?: string;
