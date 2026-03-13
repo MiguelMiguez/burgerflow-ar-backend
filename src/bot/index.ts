@@ -19,10 +19,7 @@
  */
 
 import { handleTextMessage, handleCatalogOrder } from "./handlers";
-import type {
-  IncomingMessagePayload,
-  CatalogOrderPayload,
-} from "./types";
+import type { IncomingMessagePayload, CatalogOrderPayload } from "./types";
 import type { Tenant } from "../models/tenant";
 
 /**

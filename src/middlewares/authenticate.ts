@@ -41,7 +41,9 @@ const extractBearerToken = (authHeader: string | undefined): string | null => {
  * Obtiene los datos del usuario desde Firestore.
  * IMPORTANTE: El tenantId SIEMPRE se obtiene de aquí, nunca de headers.
  */
-const getUserFromFirestore = async (uid: string): Promise<AuthenticatedUser | null> => {
+const getUserFromFirestore = async (
+  uid: string,
+): Promise<AuthenticatedUser | null> => {
   try {
     const db = getFirestore();
     const userDoc = await db.collection("users").doc(uid).get();
@@ -85,10 +87,10 @@ export const authenticate = async (
   if (bearerToken) {
     try {
       const decodedToken = await admin.auth().verifyIdToken(bearerToken);
-      
+
       // SEGURIDAD: Obtener tenantId desde Firestore, no desde headers
       const user = await getUserFromFirestore(decodedToken.uid);
-      
+
       if (user) {
         req.user = user;
         // Mantener compatibilidad con código legacy
@@ -98,7 +100,7 @@ export const authenticate = async (
         next();
         return;
       }
-      
+
       // Usuario autenticado en Firebase pero sin documento en Firestore
       // Esto puede pasar durante el registro (el usuario aún no tiene tenant)
       req.firebaseUid = decodedToken.uid;

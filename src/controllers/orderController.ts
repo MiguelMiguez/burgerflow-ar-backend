@@ -19,7 +19,10 @@ import {
 } from "../models/order";
 import { HttpError } from "../utils/httpError";
 import { logger } from "../utils/logger";
-import { getTenantIdFromRequest, getOptionalTenantId } from "../utils/tenantUtils";
+import {
+  getTenantIdFromRequest,
+  getOptionalTenantId,
+} from "../utils/tenantUtils";
 
 export const handleListOrders = async (
   req: Request,

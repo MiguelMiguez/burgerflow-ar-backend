@@ -66,7 +66,9 @@ export const isDoneCommand = (text: string): boolean => {
  */
 export const isBackCommand = (text: string): boolean => {
   const normalized = normalizeText(text);
-  return normalized === "volver" || normalized === "cancelar" || normalized === "0";
+  return (
+    normalized === "volver" || normalized === "cancelar" || normalized === "0"
+  );
 };
 
 /**

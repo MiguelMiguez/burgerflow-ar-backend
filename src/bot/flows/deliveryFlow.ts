@@ -1,5 +1,8 @@
 import { logger } from "../../utils/logger";
-import { sendMessage, sendInteractiveButtons } from "../../services/metaService";
+import {
+  sendMessage,
+  sendInteractiveButtons,
+} from "../../services/metaService";
 import {
   listActiveDeliveryZones,
   listDeliveryZones,
@@ -120,12 +123,9 @@ const handleDeliveryFlow = async (ctx: FlowContext): Promise<void> => {
     }
   } catch (error) {
     logger.error("Error al obtener zonas de delivery", error);
-    await stateMachine.transitionTo(
-      phoneNumber,
-      tenant.id,
-      "awaitingAddress",
-      { orderType: "delivery" },
-    );
+    await stateMachine.transitionTo(phoneNumber, tenant.id, "awaitingAddress", {
+      orderType: "delivery",
+    });
 
     await sendMessage(
       phoneNumber,

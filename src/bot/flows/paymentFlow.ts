@@ -1,5 +1,8 @@
 import { logger } from "../../utils/logger";
-import { sendMessage, sendInteractiveButtons } from "../../services/metaService";
+import {
+  sendMessage,
+  sendInteractiveButtons,
+} from "../../services/metaService";
 import { createOrder } from "../../services/orderService";
 import {
   createPaymentPreference,
@@ -106,8 +109,7 @@ const createAndConfirmOrder = async (ctx: FlowContext): Promise<void> => {
   });
 
   const useMercadoPago =
-    state.paymentMethod === "transferencia" &&
-    hasMercadoPagoConfigured(tenant);
+    state.paymentMethod === "transferencia" && hasMercadoPagoConfigured(tenant);
 
   const orderInput: CreateOrderInput = {
     tenantId: state.tenantId,
@@ -129,7 +131,8 @@ const createAndConfirmOrder = async (ctx: FlowContext): Promise<void> => {
   }
 
   if (state.orderType === "delivery") {
-    if (state.deliveryAddress) orderInput.deliveryAddress = state.deliveryAddress;
+    if (state.deliveryAddress)
+      orderInput.deliveryAddress = state.deliveryAddress;
     if (state.selectedZone) {
       orderInput.deliveryZoneId = state.selectedZone.id;
       orderInput.deliveryZoneName = state.selectedZone.name;

@@ -1,5 +1,8 @@
 import { logger } from "../../utils/logger";
-import { sendMessage, sendInteractiveButtons } from "../../services/metaService";
+import {
+  sendMessage,
+  sendInteractiveButtons,
+} from "../../services/metaService";
 import { listIngredients } from "../../services/ingredientService";
 import { listActiveExtras } from "../../services/extraService";
 import { getStateMachine } from "../stateMachine";
@@ -31,7 +34,11 @@ export const askCustomization = async (ctx: FlowContext): Promise<void> => {
   // Mostrar el carrito actual
   await sendMessage(phoneNumber, formatCart(state.cart), tenant);
 
-  await stateMachine.transitionTo(phoneNumber, tenant.id, "askingCustomization");
+  await stateMachine.transitionTo(
+    phoneNumber,
+    tenant.id,
+    "askingCustomization",
+  );
 
   await sendInteractiveButtons(
     phoneNumber,

@@ -1,5 +1,8 @@
 import { logger } from "../../utils/logger";
-import { sendMessage, sendInteractiveButtons } from "../../services/metaService";
+import {
+  sendMessage,
+  sendInteractiveButtons,
+} from "../../services/metaService";
 import { getActiveOrdersByPhone } from "../../services/orderService";
 import {
   sendOrderIssueNotification,
@@ -23,10 +26,23 @@ export const checkActiveOrder = async (
   tenantId: string,
 ): Promise<Order | null> => {
   try {
+    logger.debug(`Verificando pedidos activos para ${phoneNumber}`);
     const activeOrders = await getActiveOrdersByPhone(tenantId, phoneNumber);
-    return activeOrders.length > 0 ? activeOrders[0] : null;
+
+    if (activeOrders.length > 0) {
+      logger.info(
+        `Cliente ${phoneNumber} tiene pedido activo: ${activeOrders[0].id} (${activeOrders[0].status})`,
+      );
+      return activeOrders[0];
+    }
+
+    logger.debug(`No hay pedidos activos para ${phoneNumber}`);
+    return null;
   } catch (error) {
-    logger.warn("Error al verificar pedidos activos", error);
+    logger.error(
+      `Error al verificar pedidos activos para ${phoneNumber}:`,
+      error,
+    );
     return null;
   }
 };
@@ -149,7 +165,10 @@ export const handleActiveOrderMenu = async (
       [
         { id: BUTTON_IDS.ORDER_STATUS, title: "📋 Ver estado" },
         { id: BUTTON_IDS.ORDER_ISSUE, title: "⚠️ Tengo un problema" },
-        { id: BUTTON_IDS.CONTACT_RESTAURANT, title: "📞 Contactar restaurante" },
+        {
+          id: BUTTON_IDS.CONTACT_RESTAURANT,
+          title: "📞 Contactar restaurante",
+        },
       ],
       tenant,
     );
@@ -187,10 +206,7 @@ export const handleActiveOrderMenu = async (
   }
 
   // Todo bien / Gracias
-  if (
-    normalized === BUTTON_IDS.OK ||
-    INTENT_PATTERNS.thanks.test(normalized)
-  ) {
+  if (normalized === BUTTON_IDS.OK || INTENT_PATTERNS.thanks.test(normalized)) {
     await sendMessage(phoneNumber, templates.getFarewellMessage(), tenant);
     await stateMachine.reset(phoneNumber, tenant.id);
     return { handled: true };

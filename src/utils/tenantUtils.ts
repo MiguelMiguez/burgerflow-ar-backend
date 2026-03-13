@@ -3,11 +3,11 @@ import { HttpError } from "./httpError";
 
 /**
  * Obtiene el tenantId de manera SEGURA desde el usuario autenticado.
- * 
+ *
  * IMPORTANTE: El tenantId NUNCA debe obtenerse de headers (x-tenant-id).
  * Esto previene ataques de inyección multi-tenant donde un usuario
  * malicioso podría acceder a datos de otros tenants.
- * 
+ *
  * @throws HttpError 401 si el usuario no está autenticado
  * @throws HttpError 403 si el usuario no tiene un tenant asignado
  */
@@ -36,9 +36,12 @@ export const getOptionalTenantId = (req: Request): string | null => {
  * Verifica que el usuario autenticado tenga acceso al tenant especificado.
  * Útil para validar parámetros de ruta que incluyen tenantId.
  */
-export const verifyTenantAccess = (req: Request, requestedTenantId: string): void => {
+export const verifyTenantAccess = (
+  req: Request,
+  requestedTenantId: string,
+): void => {
   const userTenantId = getTenantIdFromRequest(req);
-  
+
   if (userTenantId !== requestedTenantId) {
     throw new HttpError(403, "No tienes acceso a este recurso.");
   }

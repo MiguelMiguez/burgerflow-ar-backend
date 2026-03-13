@@ -6,7 +6,9 @@ import { z } from "zod";
 
 export const registerSchema = z.object({
   email: z.string().email("El email no es v\u00e1lido"),
-  password: z.string().min(6, "La contrase\u00f1a debe tener al menos 6 caracteres"),
+  password: z
+    .string()
+    .min(6, "La contrase\u00f1a debe tener al menos 6 caracteres"),
   displayName: z.string().optional(),
   tenantName: z.string().min(1, "El nombre del negocio es requerido").max(100),
 });

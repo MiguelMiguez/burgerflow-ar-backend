@@ -14,7 +14,9 @@ export const validateBody = <T>(schema: ZodSchema<T>) => {
       next();
     } catch (error) {
       if (error instanceof ZodError) {
-        const messages = error.issues.map((e: { message: string }) => e.message).join(", ");
+        const messages = error.issues
+          .map((e: { message: string }) => e.message)
+          .join(", ");
         next(new HttpError(400, messages));
         return;
       }
@@ -34,7 +36,9 @@ export const validateQuery = <T>(schema: ZodSchema<T>) => {
       next();
     } catch (error) {
       if (error instanceof ZodError) {
-        const messages = error.issues.map((e: { message: string }) => e.message).join(", ");
+        const messages = error.issues
+          .map((e: { message: string }) => e.message)
+          .join(", ");
         next(new HttpError(400, messages));
         return;
       }
@@ -54,7 +58,9 @@ export const validateParams = <T>(schema: ZodSchema<T>) => {
       next();
     } catch (error) {
       if (error instanceof ZodError) {
-        const messages = error.issues.map((e: { message: string }) => e.message).join(", ");
+        const messages = error.issues
+          .map((e: { message: string }) => e.message)
+          .join(", ");
         next(new HttpError(400, messages));
         return;
       }

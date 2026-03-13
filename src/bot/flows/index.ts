@@ -22,10 +22,7 @@ import {
   handleAddressInput,
   handleDeliveryNotesInput,
 } from "./deliveryFlow";
-import {
-  handlePaymentSelection,
-  handleOrderConfirmation,
-} from "./paymentFlow";
+import { handlePaymentSelection, handleOrderConfirmation } from "./paymentFlow";
 
 /**
  * Mapa de handlers por estado de conversación

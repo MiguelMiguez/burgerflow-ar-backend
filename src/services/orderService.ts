@@ -102,6 +102,8 @@ export const listOrdersByStatus = async (
 /**
  * Obtiene los pedidos activos de un cliente por su número de teléfono
  * Estados activos: pendiente_pago, pendiente, confirmado, en_preparacion, listo, en_camino
+ *
+ * Nota: Usamos query simple + filtrado en memoria para evitar requerir índices compuestos
  */
 export const getActiveOrdersByPhone = async (
   tenantId: string,
@@ -116,13 +118,35 @@ export const getActiveOrdersByPhone = async (
     "en_camino",
   ];
 
-  const snapshot = await getCollection(tenantId)
-    .where("customerPhone", "==", customerPhone)
-    .where("status", "in", activeStatuses)
-    .orderBy("createdAt", "desc")
-    .get();
+  logger.debug(
+    `Buscando pedidos activos para ${customerPhone} en tenant ${tenantId}`,
+  );
 
-  return snapshot.docs.map(mapSnapshotToOrder);
+  try {
+    // Query simple solo por customerPhone para evitar problemas de índices
+    const snapshot = await getCollection(tenantId)
+      .where("customerPhone", "==", customerPhone)
+      .get();
+
+    const orders = snapshot.docs.map(mapSnapshotToOrder);
+
+    // Filtrar por estados activos y ordenar en memoria
+    const activeOrders = orders
+      .filter((order) => activeStatuses.includes(order.status))
+      .sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      );
+
+    logger.debug(
+      `Encontrados ${activeOrders.length} pedidos activos de ${orders.length} totales`,
+    );
+
+    return activeOrders;
+  } catch (error) {
+    logger.error(`Error en getActiveOrdersByPhone: ${error}`);
+    throw error;
+  }
 };
 
 export const listOrdersByDate = async (

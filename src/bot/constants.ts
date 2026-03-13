@@ -34,28 +34,28 @@ export const BUTTON_IDS = {
   ORDER_ISSUE: "btn_order_issue",
   CONTACT_RESTAURANT: "btn_contact_restaurant",
   OK: "btn_ok",
-  
+
   // Personalización
   CUSTOM_YES: "btn_custom_si",
   CUSTOM_NO: "btn_custom_no",
-  
+
   // Acciones de personalización
   ADD: "btn_agregar",
   REMOVE: "btn_quitar",
   DONE: "btn_listo",
-  
+
   // Extras
   EXTRAS_YES: "btn_extras_si",
   EXTRAS_NO: "btn_extras_no",
-  
+
   // Tipo de entrega
   DELIVERY: "btn_delivery",
   PICKUP: "btn_pickup",
-  
+
   // Pago
   CASH: "btn_efectivo",
   TRANSFER: "btn_transferencia",
-  
+
   // Confirmación
   CONFIRM: "btn_confirmar",
   CANCEL: "btn_cancelar",

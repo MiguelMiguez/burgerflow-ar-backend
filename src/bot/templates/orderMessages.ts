@@ -189,9 +189,7 @@ export const getPaymentLinkFailedMessage = (
 /**
  * Mensaje de error al crear pedido
  */
-export const getOrderCreationErrorMessage = (
-  errorMessage?: string,
-): string => {
+export const getOrderCreationErrorMessage = (errorMessage?: string): string => {
   if (errorMessage) {
     return `No se pudo crear el pedido: ${errorMessage}`;
   }
