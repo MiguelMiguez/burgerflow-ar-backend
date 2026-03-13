@@ -19,28 +19,7 @@ import {
 } from "../models/order";
 import { HttpError } from "../utils/httpError";
 import { logger } from "../utils/logger";
-
-const getTenantId = (req: Request): string | null => {
-  // Priorizar tenantId del usuario autenticado con Firebase
-  if (req.user?.tenantId) {
-    return req.user.tenantId;
-  }
-
-  // Fallback: buscar en params o headers (legacy)
-  const tenantId = req.params.tenantId || req.headers["x-tenant-id"];
-  if (!tenantId || typeof tenantId !== "string") {
-    return null;
-  }
-  return tenantId;
-};
-
-const requireTenantId = (req: Request): string => {
-  const tenantId = getTenantId(req);
-  if (!tenantId) {
-    throw new HttpError(400, "Se requiere el identificador del tenant.");
-  }
-  return tenantId;
-};
+import { getTenantIdFromRequest, getOptionalTenantId } from "../utils/tenantUtils";
 
 export const handleListOrders = async (
   req: Request,
@@ -48,16 +27,17 @@ export const handleListOrders = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = getTenantId(req);
+    // SEGURIDAD: El tenantId se obtiene del usuario autenticado
+    const tenantId = getOptionalTenantId(req);
     const { status, date, pending } = req.query;
 
-    // Verificar si el usuario es admin (solo si no hay tenantId, en cuyo caso el usuario debe ser admin)
-    const isAdmin = !tenantId && req.user?.role === "admin";
+    // Solo usuarios owner/admin pueden ver todos los pedidos sin tenant específico
+    const isAdminWithoutTenant = !tenantId && req.user?.role === "owner";
 
     let orders;
 
-    // Si no hay tenant y es admin, listar de todos los tenants
-    if (!tenantId && isAdmin) {
+    // Si no hay tenant y es admin/owner, listar de todos los tenants
+    if (!tenantId && isAdminWithoutTenant) {
       if (pending === "true") {
         orders = await listAllPendingOrders();
       } else {
@@ -74,7 +54,7 @@ export const handleListOrders = async (
         orders = await listOrders(tenantId);
       }
     } else {
-      throw new HttpError(400, "Se requiere el identificador del tenant.");
+      throw new HttpError(401, "Requiere autenticación válida.");
     }
 
     res.json(orders);
@@ -89,12 +69,8 @@ export const handleGetOrder = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = requireTenantId(req);
+    const tenantId = getTenantIdFromRequest(req);
     const { id } = req.params;
-
-    if (!id) {
-      throw new HttpError(400, "Se requiere el id del pedido.");
-    }
 
     const order = await getOrderById(tenantId, id);
     res.json(order);
@@ -109,34 +85,11 @@ export const handleCreateOrder = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = requireTenantId(req);
+    const tenantId = getTenantIdFromRequest(req);
     const payload: CreateOrderInput = {
       ...req.body,
       tenantId,
     };
-
-    if (!payload.customerName) {
-      throw new HttpError(400, "El pedido debe tener un nombre de cliente.");
-    }
-
-    if (!payload.customerPhone) {
-      throw new HttpError(400, "El pedido debe tener un teléfono de contacto.");
-    }
-
-    if (!payload.items || payload.items.length === 0) {
-      throw new HttpError(400, "El pedido debe tener al menos un producto.");
-    }
-
-    if (!payload.orderType) {
-      throw new HttpError(
-        400,
-        "El pedido debe especificar el tipo (delivery/pickup).",
-      );
-    }
-
-    if (!payload.paymentMethod) {
-      throw new HttpError(400, "El pedido debe especificar el método de pago.");
-    }
 
     const order = await createOrder(payload);
     logger.info(`Pedido creado: #${order.id} para ${order.customerName}`);
@@ -152,7 +105,7 @@ export const handleUpdateOrder = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = requireTenantId(req);
+    const tenantId = getTenantIdFromRequest(req);
     const { id } = req.params;
 
     if (!id) {
@@ -182,7 +135,7 @@ export const handleConfirmOrder = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = requireTenantId(req);
+    const tenantId = getTenantIdFromRequest(req);
     const { id } = req.params;
 
     if (!id) {
@@ -203,7 +156,7 @@ export const handleCancelOrder = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = requireTenantId(req);
+    const tenantId = getTenantIdFromRequest(req);
     const { id } = req.params;
 
     if (!id) {
@@ -224,7 +177,7 @@ export const handleUpdateOrderStatus = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = requireTenantId(req);
+    const tenantId = getTenantIdFromRequest(req);
     const { id } = req.params;
     const { status, deliveryId, deliveryCost } = req.body;
 
@@ -283,7 +236,7 @@ export const handleGetDeliverySettlements = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = requireTenantId(req);
+    const tenantId = getTenantIdFromRequest(req);
     const { date, deliveryId } = req.query;
 
     if (!date || typeof date !== "string") {

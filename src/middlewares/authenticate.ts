@@ -1,8 +1,10 @@
 import { NextFunction, Request, Response } from "express";
 import admin from "firebase-admin";
+import { getFirestore } from "../config/firebase";
 import env from "../config/env";
 import { HttpError } from "../utils/httpError";
 import { logger } from "../utils/logger";
+import type { AuthenticatedUser } from "../types/express";
 
 export type UserRole = "admin" | "user";
 
@@ -35,6 +37,37 @@ const extractBearerToken = (authHeader: string | undefined): string | null => {
   return authHeader.slice(7);
 };
 
+/**
+ * Obtiene los datos del usuario desde Firestore.
+ * IMPORTANTE: El tenantId SIEMPRE se obtiene de aquí, nunca de headers.
+ */
+const getUserFromFirestore = async (uid: string): Promise<AuthenticatedUser | null> => {
+  try {
+    const db = getFirestore();
+    const userDoc = await db.collection("users").doc(uid).get();
+
+    if (!userDoc.exists) {
+      return null;
+    }
+
+    const userData = userDoc.data();
+    if (!userData || !userData.tenantId) {
+      return null;
+    }
+
+    return {
+      uid,
+      email: userData.email,
+      tenantId: userData.tenantId,
+      role: userData.role || "employee",
+      displayName: userData.displayName,
+    };
+  } catch (error) {
+    logger.error(`Error al obtener usuario de Firestore: ${error}`);
+    return null;
+  }
+};
+
 export const authenticate = async (
   req: Request,
   res: Response,
@@ -52,9 +85,25 @@ export const authenticate = async (
   if (bearerToken) {
     try {
       const decodedToken = await admin.auth().verifyIdToken(bearerToken);
-      req.userRole = "admin"; // Usuarios autenticados con Firebase tienen rol admin
+      
+      // SEGURIDAD: Obtener tenantId desde Firestore, no desde headers
+      const user = await getUserFromFirestore(decodedToken.uid);
+      
+      if (user) {
+        req.user = user;
+        // Mantener compatibilidad con código legacy
+        req.userRole = "admin";
+        req.firebaseUid = user.uid;
+        req.firebaseEmail = user.email;
+        next();
+        return;
+      }
+      
+      // Usuario autenticado en Firebase pero sin documento en Firestore
+      // Esto puede pasar durante el registro (el usuario aún no tiene tenant)
       req.firebaseUid = decodedToken.uid;
       req.firebaseEmail = decodedToken.email;
+      req.userRole = "admin";
       next();
       return;
     } catch (error) {
@@ -65,7 +114,7 @@ export const authenticate = async (
     }
   }
 
-  // 2. Fallback a API Key (legacy)
+  // 2. Fallback a API Key (legacy - solo para compatibilidad)
   const apiKeyHeader = req.header("x-api-key");
   const apiKeyQuery =
     typeof req.query.apiKey === "string" ? req.query.apiKey : undefined;

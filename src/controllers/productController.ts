@@ -21,20 +21,7 @@ import {
   syncProductsToCatalog,
   hasCatalogConfigured,
 } from "../services/whatsappCatalogService";
-
-const getTenantId = (req: Request): string => {
-  // Priorizar tenantId del usuario autenticado con Firebase
-  if (req.user?.tenantId) {
-    return req.user.tenantId;
-  }
-
-  // Fallback: buscar en params o headers (legacy)
-  const tenantId = req.params.tenantId || req.headers["x-tenant-id"];
-  if (!tenantId || typeof tenantId !== "string") {
-    throw new HttpError(400, "Se requiere el identificador del tenant.");
-  }
-  return tenantId;
-};
+import { getTenantIdFromRequest } from "../utils/tenantUtils";
 
 const sanitizeProductPayload = (
   payload: Partial<CreateProductInput>,
@@ -108,7 +95,7 @@ export const handleListProducts = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = getTenantIdFromRequest(req);
     const { available, category } = req.query;
 
     let products;
@@ -136,7 +123,7 @@ export const handleGetProduct = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = getTenantIdFromRequest(req);
     const { id } = req.params;
 
     if (!id) {
@@ -156,7 +143,7 @@ export const handleCreateProduct = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = getTenantIdFromRequest(req);
     const sanitized = sanitizeProductPayload(req.body);
 
     if (!sanitized.name) {
@@ -191,7 +178,7 @@ export const handleUpdateProduct = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = getTenantIdFromRequest(req);
     const { id } = req.params;
 
     if (!id) {
@@ -233,7 +220,7 @@ export const handleDeleteProduct = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = getTenantIdFromRequest(req);
     const { id } = req.params;
 
     if (!id) {
@@ -254,7 +241,7 @@ export const handleToggleProductAvailability = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = getTenantIdFromRequest(req);
     const { id } = req.params;
 
     if (!id) {
@@ -281,7 +268,7 @@ export const handleSyncCatalog = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = getTenantIdFromRequest(req);
 
     // Verificar que el tenant tenga configurado el catálogo
     const tenant = await getTenantById(tenantId);

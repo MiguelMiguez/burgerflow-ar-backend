@@ -10,20 +10,7 @@ import {
 import { ReportPeriod } from "../models/cashRegister";
 import { HttpError } from "../utils/httpError";
 import { logger } from "../utils/logger";
-
-const getTenantId = (req: Request): string => {
-  // Priorizar tenantId del usuario autenticado con Firebase
-  if (req.user?.tenantId) {
-    return req.user.tenantId;
-  }
-  
-  // Fallback: buscar en params o headers (legacy)
-  const tenantId = req.params.tenantId || req.headers["x-tenant-id"];
-  if (!tenantId || typeof tenantId !== "string") {
-    throw new HttpError(400, "Se requiere el identificador del tenant.");
-  }
-  return tenantId;
-};
+import { getTenantIdFromRequest } from "../utils/tenantUtils";
 
 export const handleListCashRegisters = async (
   req: Request,
@@ -31,7 +18,7 @@ export const handleListCashRegisters = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = getTenantIdFromRequest(req);
     const registers = await listCashRegisters(tenantId);
     res.json(registers);
   } catch (error) {
@@ -45,7 +32,7 @@ export const handleGetCashRegister = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = getTenantIdFromRequest(req);
     const { id } = req.params;
 
     if (!id) {
@@ -65,7 +52,7 @@ export const handleGetCashRegisterByDate = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = getTenantIdFromRequest(req);
     const { date } = req.params;
 
     if (!date) {
@@ -91,7 +78,7 @@ export const handleGetDailySummary = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = getTenantIdFromRequest(req);
     const { date } = req.query;
 
     const targetDate =
@@ -110,7 +97,7 @@ export const handleCloseCashRegister = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = getTenantIdFromRequest(req);
     const { date, closedBy, notes } = req.body;
 
     if (!date) {
@@ -135,7 +122,7 @@ export const handleGenerateSalesReport = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = getTenantIdFromRequest(req);
     const { period, date } = req.query;
 
     if (!period || typeof period !== "string") {

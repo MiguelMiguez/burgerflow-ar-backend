@@ -5,7 +5,7 @@ import { getTenantByPhoneNumberId } from "../services/tenantService";
 import {
   processIncomingMessage as processBurgerBotMessage,
   processCatalogOrder as processBurgerBotCatalogOrder,
-} from "../bot/burgerBotRefactored";
+} from "../bot";
 import type { Tenant } from "../models/tenant";
 
 /**

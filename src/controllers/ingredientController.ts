@@ -14,20 +14,7 @@ import {
 } from "../models/ingredient";
 import { HttpError } from "../utils/httpError";
 import { logger } from "../utils/logger";
-
-const getTenantId = (req: Request): string => {
-  // Priorizar tenantId del usuario autenticado con Firebase
-  if (req.user?.tenantId) {
-    return req.user.tenantId;
-  }
-  
-  // Fallback: buscar en params o headers (legacy)
-  const tenantId = req.params.tenantId || req.headers["x-tenant-id"];
-  if (!tenantId || typeof tenantId !== "string") {
-    throw new HttpError(400, "Se requiere el identificador del tenant.");
-  }
-  return tenantId;
-};
+import { getTenantIdFromRequest } from "../utils/tenantUtils";
 
 export const handleListIngredients = async (
   req: Request,
@@ -35,7 +22,7 @@ export const handleListIngredients = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = getTenantIdFromRequest(req);
     const ingredients = await listIngredients(tenantId);
     res.json(ingredients);
   } catch (error) {
@@ -49,7 +36,7 @@ export const handleGetIngredient = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = getTenantIdFromRequest(req);
     const { id } = req.params;
 
     if (!id) {
@@ -69,7 +56,7 @@ export const handleCreateIngredient = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = getTenantIdFromRequest(req);
     const payload: CreateIngredientInput = {
       ...req.body,
       tenantId,
@@ -101,7 +88,7 @@ export const handleUpdateIngredient = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = getTenantIdFromRequest(req);
     const { id } = req.params;
 
     if (!id) {
@@ -133,7 +120,7 @@ export const handleDeleteIngredient = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = getTenantIdFromRequest(req);
     const { id } = req.params;
 
     if (!id) {
@@ -154,7 +141,7 @@ export const handleUpdateStock = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = getTenantIdFromRequest(req);
     const { id } = req.params;
 
     logger.info(
@@ -194,7 +181,7 @@ export const handleGetLowStock = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = getTenantIdFromRequest(req);
     const ingredients = await getLowStockIngredients(tenantId);
     res.json(ingredients);
   } catch (error) {

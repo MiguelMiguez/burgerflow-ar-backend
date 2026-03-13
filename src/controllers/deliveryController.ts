@@ -12,20 +12,7 @@ import {
 import { CreateDeliveryInput, UpdateDeliveryInput } from "../models/delivery";
 import { HttpError } from "../utils/httpError";
 import { logger } from "../utils/logger";
-
-const getTenantId = (req: Request): string => {
-  // Priorizar tenantId del usuario autenticado con Firebase
-  if (req.user?.tenantId) {
-    return req.user.tenantId;
-  }
-
-  // Fallback: buscar en params o headers (legacy)
-  const tenantId = req.params.tenantId || req.headers["x-tenant-id"];
-  if (!tenantId || typeof tenantId !== "string") {
-    throw new HttpError(400, "Se requiere el identificador del tenant.");
-  }
-  return tenantId;
-};
+import { getTenantIdFromRequest } from "../utils/tenantUtils";
 
 export const handleListDeliveries = async (
   req: Request,
@@ -33,7 +20,7 @@ export const handleListDeliveries = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = getTenantIdFromRequest(req);
     const { active } = req.query;
 
     const deliveries =
@@ -53,7 +40,7 @@ export const handleGetDelivery = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = getTenantIdFromRequest(req);
     const { id } = req.params;
 
     if (!id) {
@@ -73,7 +60,7 @@ export const handleCreateDelivery = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = getTenantIdFromRequest(req);
     const payload: CreateDeliveryInput = {
       ...req.body,
       tenantId,
@@ -101,7 +88,7 @@ export const handleUpdateDelivery = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = getTenantIdFromRequest(req);
     const { id } = req.params;
 
     if (!id) {
@@ -131,7 +118,7 @@ export const handleDeleteDelivery = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = getTenantIdFromRequest(req);
     const { id } = req.params;
     const { permanent } = req.query;
 
@@ -158,7 +145,7 @@ export const handleToggleDeliveryStatus = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = getTenantIdFromRequest(req);
     const { id } = req.params;
 
     if (!id) {
