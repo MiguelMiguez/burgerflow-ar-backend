@@ -71,7 +71,7 @@ export const showActiveOrderMenu = async (
     [
       { id: BUTTON_IDS.ORDER_STATUS, title: "📋 Ver estado" },
       { id: BUTTON_IDS.ORDER_ISSUE, title: "⚠️ Tengo un problema" },
-      { id: BUTTON_IDS.CONTACT_RESTAURANT, title: "📞 Contactar restaurante" },
+      { id: BUTTON_IDS.CONTACT_RESTAURANT, title: "📞 Contactar" },
     ],
     tenant,
   );
@@ -96,7 +96,7 @@ const showOrderStatus = async (
     "¿Necesitás algo más?",
     [
       { id: BUTTON_IDS.ORDER_ISSUE, title: "⚠️ Tengo un problema" },
-      { id: BUTTON_IDS.CONTACT_RESTAURANT, title: "📞 Contactar restaurante" },
+      { id: BUTTON_IDS.CONTACT_RESTAURANT, title: "📞 Contactar" },
       { id: BUTTON_IDS.OK, title: "✅ Todo bien" },
     ],
     tenant,
@@ -167,7 +167,7 @@ export const handleActiveOrderMenu = async (
         { id: BUTTON_IDS.ORDER_ISSUE, title: "⚠️ Tengo un problema" },
         {
           id: BUTTON_IDS.CONTACT_RESTAURANT,
-          title: "📞 Contactar restaurante",
+          title: "📞 Contactar",
         },
       ],
       tenant,
@@ -224,7 +224,7 @@ export const handleActiveOrderMenu = async (
     [
       { id: BUTTON_IDS.ORDER_STATUS, title: "📋 Ver estado" },
       { id: BUTTON_IDS.ORDER_ISSUE, title: "⚠️ Tengo un problema" },
-      { id: BUTTON_IDS.CONTACT_RESTAURANT, title: "📞 Contactar restaurante" },
+      { id: BUTTON_IDS.CONTACT_RESTAURANT, title: "📞 Contactar" },
     ],
     tenant,
   );
