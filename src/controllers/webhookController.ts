@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import crypto from "crypto";
 import env from "../config/env";
 import { logger } from "../utils/logger";
 import { getTenantByPhoneNumberId } from "../services/tenantService";
@@ -334,8 +335,8 @@ async function processIncomingMessage(
 }
 
 /**
- * Validación opcional de firma del webhook usando APP_SECRET
- * Meta firma cada webhook con tu App Secret
+ * Validación de firma del webhook usando APP_SECRET
+ * Meta firma cada webhook con tu App Secret usando HMAC SHA256
  * Documentación: https://developers.facebook.com/docs/graph-api/webhooks/getting-started#verification-requests
  */
 export const validateWebhookSignature = (
@@ -343,8 +344,14 @@ export const validateWebhookSignature = (
   res: Response,
   next: () => void,
 ): void => {
-  // Si no hay APP_SECRET configurado, saltar validación
+  // Si no hay APP_SECRET configurado, saltar validación (solo en desarrollo)
   if (!env.metaAppSecret) {
+    if (env.nodeEnv === "production") {
+      logger.error("META_APP_SECRET no configurado en producción - rechazando webhook");
+      res.sendStatus(500);
+      return;
+    }
+    logger.warn("META_APP_SECRET no configurado - saltando validación de firma (solo desarrollo)");
     next();
     return;
   }
@@ -357,19 +364,31 @@ export const validateWebhookSignature = (
     return;
   }
 
-  // TODO: Implementar validación de firma HMAC SHA256
-  // const crypto = require('crypto');
-  // const hash = crypto.createHmac('sha256', env.metaAppSecret)
-  //   .update(JSON.stringify(req.body))
-  //   .digest('hex');
-  // const expectedSignature = `sha256=${hash}`;
-  //
-  // if (signature !== expectedSignature) {
-  //   logger.warn("Firma de webhook inválida");
-  //   res.sendStatus(403);
-  //   return;
-  // }
+  // Calcular firma HMAC SHA256
+  const rawBody = JSON.stringify(req.body);
+  const hash = crypto
+    .createHmac("sha256", env.metaAppSecret)
+    .update(rawBody)
+    .digest("hex");
+  const expectedSignature = `sha256=${hash}`;
 
-  logger.debug("Firma de webhook validada (implementación pendiente)");
+  // Usar comparación de tiempo constante para prevenir timing attacks
+  try {
+    const signatureBuffer = Buffer.from(signature);
+    const expectedBuffer = Buffer.from(expectedSignature);
+    
+    if (signatureBuffer.length !== expectedBuffer.length || 
+        !crypto.timingSafeEqual(signatureBuffer, expectedBuffer)) {
+      logger.warn("Firma de webhook inválida - posible intento de suplantación");
+      res.sendStatus(403);
+      return;
+    }
+  } catch (error) {
+    logger.error("Error validando firma de webhook", error);
+    res.sendStatus(403);
+    return;
+  }
+
+  logger.debug("Firma de webhook validada exitosamente");
   next();
 };

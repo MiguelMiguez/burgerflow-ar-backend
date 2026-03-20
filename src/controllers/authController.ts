@@ -22,17 +22,11 @@ export const register = async (
   try {
     const input: CreateUserInput = req.body;
 
-    // Validaciones básicas
+    // Validación de campos ya realizada por Zod middleware
+    // Solo verificamos que los campos requeridos estén presentes como fallback
     if (!input.email || !input.password || !input.tenantName) {
       res.status(400).json({
         error: "Email, password y nombre del tenant son requeridos",
-      });
-      return;
-    }
-
-    if (input.password.length < 6) {
-      res.status(400).json({
-        error: "La contraseña debe tener al menos 6 caracteres",
       });
       return;
     }

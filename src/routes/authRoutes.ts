@@ -8,6 +8,8 @@ import {
   handleGoogleSignIn,
 } from "../controllers/authController";
 import { authenticate } from "../middlewares/authenticate";
+import { validateBody } from "../middlewares/validate";
+import { registerSchema, loginSchema } from "../validators/authValidators";
 
 const router = Router();
 
@@ -40,7 +42,7 @@ const router = Router();
  *       201:
  *         description: Usuario registrado exitosamente
  */
-router.post("/register", register);
+router.post("/register", validateBody(registerSchema), register);
 
 /**
  * @swagger
@@ -66,7 +68,7 @@ router.post("/register", register);
  *       200:
  *         description: Autenticación exitosa
  */
-router.post("/login", login);
+router.post("/login", validateBody(loginSchema), login);
 
 /**
  * @swagger

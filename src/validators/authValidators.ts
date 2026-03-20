@@ -8,7 +8,11 @@ export const registerSchema = z.object({
   email: z.string().email("El email no es v\u00e1lido"),
   password: z
     .string()
-    .min(6, "La contrase\u00f1a debe tener al menos 6 caracteres"),
+    .min(8, "La contraseña debe tener al menos 8 caracteres")
+    .regex(/[A-Z]/, "La contraseña debe contener al menos una mayúscula")
+    .regex(/[a-z]/, "La contraseña debe contener al menos una minúscula")
+    .regex(/[0-9]/, "La contraseña debe contener al menos un número")
+    .regex(/[^A-Za-z0-9]/, "La contraseña debe contener al menos un carácter especial"),
   displayName: z.string().optional(),
   tenantName: z.string().min(1, "El nombre del negocio es requerido").max(100),
 });

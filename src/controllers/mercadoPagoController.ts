@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from "express";
+import crypto from "crypto";
 import { logger } from "../utils/logger";
 import { HttpError } from "../utils/httpError";
 import env from "../config/env";
@@ -148,6 +149,97 @@ export const handleGetStatus = async (
 // En producción con múltiples instancias, usar Redis u otra solución distribuida
 const processedPayments = new Set<string>();
 const PROCESSED_PAYMENT_TTL = 5 * 60 * 1000; // 5 minutos
+
+/**
+ * Middleware para validar la firma del webhook de Mercado Pago
+ * Mercado Pago firma los webhooks usando HMAC SHA256
+ * Documentación: https://www.mercadopago.com.ar/developers/es/docs/your-integrations/notifications/webhooks
+ */
+export const validateMercadoPagoWebhook = (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void => {
+  // Si no hay client secret configurado, saltar validación (solo en desarrollo)
+  if (!env.mercadoPagoClientSecret) {
+    if (env.nodeEnv === "production") {
+      logger.error("MERCADO_PAGO_CLIENT_SECRET no configurado en producción - rechazando webhook");
+      res.sendStatus(500);
+      return;
+    }
+    logger.warn("MERCADO_PAGO_CLIENT_SECRET no configurado - saltando validación de firma (solo desarrollo)");
+    next();
+    return;
+  }
+
+  const signature = req.headers["x-signature"] as string;
+  const requestId = req.headers["x-request-id"] as string;
+
+  if (!signature) {
+    // Mercado Pago puede enviar webhooks sin firma en modo sandbox
+    // En producción, deberíamos rechazar estos webhooks
+    if (env.nodeEnv === "production") {
+      logger.warn("Webhook de Mercado Pago sin firma x-signature - rechazado");
+      res.sendStatus(403);
+      return;
+    }
+    logger.warn("Webhook de Mercado Pago sin firma x-signature - aceptado (modo desarrollo)");
+    next();
+    return;
+  }
+
+  try {
+    // Parse the x-signature header
+    // Format: "ts=xxx,v1=xxx"
+    const parts = signature.split(",");
+    const signatureParts: Record<string, string> = {};
+    
+    for (const part of parts) {
+      const [key, value] = part.split("=");
+      if (key && value) {
+        signatureParts[key.trim()] = value.trim();
+      }
+    }
+
+    const ts = signatureParts["ts"];
+    const v1 = signatureParts["v1"];
+
+    if (!ts || !v1) {
+      logger.warn("Formato de firma de Mercado Pago inválido");
+      res.sendStatus(403);
+      return;
+    }
+
+    // Get the data id from query or body
+    const dataId = req.query.id || req.body?.data?.id || "";
+
+    // Construct the manifest string
+    // The manifest is: "id:{data.id};request-id:{x-request-id};ts:{ts};"
+    const manifest = `id:${dataId};request-id:${requestId};ts:${ts};`;
+
+    // Calculate HMAC
+    const hash = crypto
+      .createHmac("sha256", env.mercadoPagoClientSecret)
+      .update(manifest)
+      .digest("hex");
+
+    // Compare using timing-safe comparison
+    const hashBuffer = Buffer.from(hash);
+    const v1Buffer = Buffer.from(v1);
+
+    if (hashBuffer.length !== v1Buffer.length || !crypto.timingSafeEqual(hashBuffer, v1Buffer)) {
+      logger.warn("Firma de webhook de Mercado Pago inválida - posible intento de suplantación");
+      res.sendStatus(403);
+      return;
+    }
+
+    logger.debug("Firma de webhook de Mercado Pago validada exitosamente");
+    next();
+  } catch (error) {
+    logger.error("Error validando firma de webhook de Mercado Pago", error);
+    res.sendStatus(403);
+  }
+};
 
 /**
  * Webhook de Mercado Pago para notificaciones de pago
