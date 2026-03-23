@@ -29,6 +29,10 @@ declare global {
 
 const app = express();
 
+// Trust proxy - Required for Render/Heroku/etc. to correctly identify client IPs
+// This enables express-rate-limit to work properly behind reverse proxies
+app.set("trust proxy", 1);
+
 // ==================== SECURITY MIDDLEWARE ====================
 
 // Helmet: Secure HTTP headers (XSS protection, clickjacking prevention, etc.)
