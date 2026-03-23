@@ -11,3 +11,5 @@ services:
         value: "false"
       - key: NODE_ENV
         value: production
+      - key: FRONTEND_URL
+        value: "https://burgerflow.netlify.app"
