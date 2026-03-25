@@ -11,10 +11,7 @@ import {
   getPaymentStatus,
   hasMercadoPagoConfigured,
 } from "../services/mercadoPagoService";
-import {
-  updateOrder,
-  getOrderById,
-} from "../services/orderService";
+import { updateOrder, getOrderById } from "../services/orderService";
 import { sendMessage } from "../services/metaService";
 import { sendNewOrderNotification } from "../services/notificationService";
 
@@ -163,11 +160,15 @@ export const validateMercadoPagoWebhook = (
   // Si no hay client secret configurado, saltar validación (solo en desarrollo)
   if (!env.mercadoPagoClientSecret) {
     if (env.nodeEnv === "production") {
-      logger.error("MERCADO_PAGO_CLIENT_SECRET no configurado en producción - rechazando webhook");
+      logger.error(
+        "MERCADO_PAGO_CLIENT_SECRET no configurado en producción - rechazando webhook",
+      );
       res.sendStatus(500);
       return;
     }
-    logger.warn("MERCADO_PAGO_CLIENT_SECRET no configurado - saltando validación de firma (solo desarrollo)");
+    logger.warn(
+      "MERCADO_PAGO_CLIENT_SECRET no configurado - saltando validación de firma (solo desarrollo)",
+    );
     next();
     return;
   }
@@ -183,7 +184,9 @@ export const validateMercadoPagoWebhook = (
       res.sendStatus(403);
       return;
     }
-    logger.warn("Webhook de Mercado Pago sin firma x-signature - aceptado (modo desarrollo)");
+    logger.warn(
+      "Webhook de Mercado Pago sin firma x-signature - aceptado (modo desarrollo)",
+    );
     next();
     return;
   }
@@ -193,7 +196,7 @@ export const validateMercadoPagoWebhook = (
     // Format: "ts=xxx,v1=xxx"
     const parts = signature.split(",");
     const signatureParts: Record<string, string> = {};
-    
+
     for (const part of parts) {
       const [key, value] = part.split("=");
       if (key && value) {
@@ -227,8 +230,13 @@ export const validateMercadoPagoWebhook = (
     const hashBuffer = Buffer.from(hash);
     const v1Buffer = Buffer.from(v1);
 
-    if (hashBuffer.length !== v1Buffer.length || !crypto.timingSafeEqual(hashBuffer, v1Buffer)) {
-      logger.warn("Firma de webhook de Mercado Pago inválida - posible intento de suplantación");
+    if (
+      hashBuffer.length !== v1Buffer.length ||
+      !crypto.timingSafeEqual(hashBuffer, v1Buffer)
+    ) {
+      logger.warn(
+        "Firma de webhook de Mercado Pago inválida - posible intento de suplantación",
+      );
       res.sendStatus(403);
       return;
     }
@@ -280,20 +288,22 @@ export const handlePaymentWebhook = async (
     }
 
     paymentId = String(paymentId);
-    
+
     // Verificar si este pago ya fue procesado recientemente (deduplicación)
     if (processedPayments.has(paymentId)) {
-      logger.info(`Pago ${paymentId} ya fue procesado recientemente, ignorando webhook duplicado`);
+      logger.info(
+        `Pago ${paymentId} ya fue procesado recientemente, ignorando webhook duplicado`,
+      );
       return;
     }
-    
+
     // Marcar como procesado
     processedPayments.add(paymentId);
     // Limpiar después del TTL
     setTimeout(() => {
       processedPayments.delete(paymentId);
     }, PROCESSED_PAYMENT_TTL);
-    
+
     logger.info(`Procesando pago ${paymentId}`);
 
     // Buscar la orden usando el paymentId
@@ -338,7 +348,9 @@ export const handlePaymentWebhook = async (
 
         // Verificar si el pedido ya fue procesado (evitar notificaciones duplicadas)
         if (order.paymentStatus === "pagado") {
-          logger.info(`Orden ${orderId} ya tiene pago confirmado, ignorando webhook duplicado`);
+          logger.info(
+            `Orden ${orderId} ya tiene pago confirmado, ignorando webhook duplicado`,
+          );
           return;
         }
 
@@ -346,10 +358,12 @@ export const handlePaymentWebhook = async (
         if (paymentStatus.status === "approved") {
           // Verificar nuevamente que no esté ya pagado (doble check)
           if (order.status !== "pendiente_pago") {
-            logger.info(`Orden ${orderId} ya no está pendiente de pago (status: ${order.status}), ignorando`);
+            logger.info(
+              `Orden ${orderId} ya no está pendiente de pago (status: ${order.status}), ignorando`,
+            );
             return;
           }
-          
+
           await updateOrder(tenant.id, orderId, {
             paymentStatus: "pagado",
             status: "pendiente", // Ahora sí está confirmado para preparar
@@ -437,12 +451,8 @@ export const handlePaymentReturn = async (
   res: Response,
 ): Promise<void> => {
   try {
-    const {
-      collection_status,
-      status,
-      external_reference,
-      payment_id,
-    } = req.query;
+    const { collection_status, status, external_reference, payment_id } =
+      req.query;
 
     // Determinar el estado del pago
     const paymentStatus = status || collection_status || "unknown";
@@ -463,15 +473,17 @@ export const handlePaymentReturn = async (
           if (order) {
             // Obtener el número de WhatsApp del negocio
             const businessPhone = tenant.whatsappNumber || tenant.phone;
-            
+
             if (businessPhone) {
               // Limpiar el número de teléfono (solo dígitos)
               const cleanPhone = businessPhone.replace(/\D/g, "");
-              
+
               // Construir URL de WhatsApp
               const whatsappUrl = `https://wa.me/${cleanPhone}`;
-              
-              logger.info(`Redirigiendo a WhatsApp del negocio: ${whatsappUrl}`);
+
+              logger.info(
+                `Redirigiendo a WhatsApp del negocio: ${whatsappUrl}`,
+              );
               res.redirect(whatsappUrl);
               return;
             }
@@ -484,9 +496,13 @@ export const handlePaymentReturn = async (
     }
 
     // Fallback: si no se encontró la orden o no hay número de WhatsApp, redirigir al frontend
-    logger.warn("No se pudo determinar el número de WhatsApp, redirigiendo al frontend");
+    logger.warn(
+      "No se pudo determinar el número de WhatsApp, redirigiendo al frontend",
+    );
     const frontendUrl = env.frontendUrl || "https://burgerflow.netlify.app";
-    res.redirect(`${frontendUrl}/pedido-completado?status=${paymentStatus}&order=${orderId}`);
+    res.redirect(
+      `${frontendUrl}/pedido-completado?status=${paymentStatus}&order=${orderId}`,
+    );
   } catch (error) {
     logger.error("Error en retorno de pago", error);
     // Fallback al frontend con error

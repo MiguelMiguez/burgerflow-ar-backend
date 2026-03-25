@@ -347,11 +347,15 @@ export const validateWebhookSignature = (
   // Si no hay APP_SECRET configurado, saltar validación (solo en desarrollo)
   if (!env.metaAppSecret) {
     if (env.nodeEnv === "production") {
-      logger.error("META_APP_SECRET no configurado en producción - rechazando webhook");
+      logger.error(
+        "META_APP_SECRET no configurado en producción - rechazando webhook",
+      );
       res.sendStatus(500);
       return;
     }
-    logger.warn("META_APP_SECRET no configurado - saltando validación de firma (solo desarrollo)");
+    logger.warn(
+      "META_APP_SECRET no configurado - saltando validación de firma (solo desarrollo)",
+    );
     next();
     return;
   }
@@ -364,8 +368,9 @@ export const validateWebhookSignature = (
     return;
   }
 
-  // Calcular firma HMAC SHA256
-  const rawBody = JSON.stringify(req.body);
+  // Usar raw body si está disponible, de lo contrario usar JSON.stringify (fallback)
+  // El raw body es necesario porque la firma se calcula sobre el cuerpo exacto enviado por Meta
+  const rawBody = req.rawBody || Buffer.from(JSON.stringify(req.body));
   const hash = crypto
     .createHmac("sha256", env.metaAppSecret)
     .update(rawBody)
@@ -376,10 +381,14 @@ export const validateWebhookSignature = (
   try {
     const signatureBuffer = Buffer.from(signature);
     const expectedBuffer = Buffer.from(expectedSignature);
-    
-    if (signatureBuffer.length !== expectedBuffer.length || 
-        !crypto.timingSafeEqual(signatureBuffer, expectedBuffer)) {
-      logger.warn("Firma de webhook inválida - posible intento de suplantación");
+
+    if (
+      signatureBuffer.length !== expectedBuffer.length ||
+      !crypto.timingSafeEqual(signatureBuffer, expectedBuffer)
+    ) {
+      logger.warn(
+        "Firma de webhook inválida - posible intento de suplantación",
+      );
       res.sendStatus(403);
       return;
     }

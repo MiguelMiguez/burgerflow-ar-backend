@@ -6,7 +6,10 @@ import swaggerUi from "swagger-ui-express";
 import routes from "./routes";
 import webhookRoutes from "./routes/webhookRoutes";
 import mercadoPagoRoutes from "./routes/mercadoPagoRoutes";
-import { handlePaymentWebhook, validateMercadoPagoWebhook } from "./controllers/mercadoPagoController";
+import {
+  handlePaymentWebhook,
+  validateMercadoPagoWebhook,
+} from "./controllers/mercadoPagoController";
 import { errorHandler } from "./middlewares/errorHandler";
 import { logger } from "./utils/logger";
 import swaggerDocument from "./config/swagger";
@@ -23,6 +26,7 @@ declare global {
         role: "owner" | "admin" | "employee";
       };
       userRole?: "admin" | "user"; // DEPRECATED: Legacy API Key authentication
+      rawBody?: Buffer; // Raw body for webhook signature validation
     }
   }
 }
@@ -36,17 +40,19 @@ app.set("trust proxy", 1);
 // ==================== SECURITY MIDDLEWARE ====================
 
 // Helmet: Secure HTTP headers (XSS protection, clickjacking prevention, etc.)
-app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"], // Required for Swagger UI
-      scriptSrc: ["'self'", "'unsafe-inline'"], // Required for Swagger UI
-      imgSrc: ["'self'", "data:", "https:"],
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"], // Required for Swagger UI
+        scriptSrc: ["'self'", "'unsafe-inline'"], // Required for Swagger UI
+        imgSrc: ["'self'", "data:", "https:"],
+      },
     },
-  },
-  crossOriginEmbedderPolicy: false, // Allows Swagger UI to work
-}));
+    crossOriginEmbedderPolicy: false, // Allows Swagger UI to work
+  }),
+);
 
 // Rate Limiting: Prevent brute force and DoS attacks
 const generalLimiter = rateLimit({
@@ -60,7 +66,9 @@ const generalLimiter = rateLimit({
 const authLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
   max: 10, // Limit each IP to 10 auth requests per minute
-  message: { error: "Demasiados intentos de autenticación, intenta de nuevo más tarde" },
+  message: {
+    error: "Demasiados intentos de autenticación, intenta de nuevo más tarde",
+  },
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -79,7 +87,7 @@ const corsOptions: CorsOptions = {
       callback(null, true);
       return;
     }
-    
+
     if (allowedOrigins.includes(origin) || env.nodeEnv === "development") {
       callback(null, true);
     } else {
@@ -95,7 +103,18 @@ const corsOptions: CorsOptions = {
 
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
-app.use(express.json());
+
+// JSON parser con captura de raw body para validación de firma de webhooks
+app.use(
+  express.json({
+    verify: (req: express.Request, _res, buf) => {
+      // Solo capturar raw body para rutas de webhook
+      if (req.url?.startsWith("/api/webhook")) {
+        req.rawBody = buf;
+      }
+    },
+  }),
+);
 
 // Apply general rate limiting to all routes
 app.use(generalLimiter);
@@ -137,7 +156,11 @@ app.use("/api/webhook", webhookRoutes);
 // Webhook de Mercado Pago - Sin autenticación JWT
 // Mercado Pago envía notificaciones de pago a esta ruta
 // Incluye validación de firma para seguridad
-app.post("/api/webhooks/mercadopago", validateMercadoPagoWebhook, handlePaymentWebhook);
+app.post(
+  "/api/webhooks/mercadopago",
+  validateMercadoPagoWebhook,
+  handlePaymentWebhook,
+);
 
 // Rutas de Mercado Pago OAuth
 app.use("/api/mercadopago", mercadoPagoRoutes);
