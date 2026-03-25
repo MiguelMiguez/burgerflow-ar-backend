@@ -15,6 +15,21 @@ import type { Tenant } from "../models/tenant";
  */
 
 /**
+ * Cache de mensajes procesados para deduplicación
+ * Meta puede reenviar webhooks que fallaron previamente
+ * Almacenamos los message IDs procesados para evitar duplicados
+ */
+const processedMessageIds = new Set<string>();
+const MESSAGE_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutos
+const MAX_MESSAGE_AGE_MS = 5 * 60 * 1000; // 5 minutos - rechazar mensajes más viejos
+
+// Limpiar cache periódicamente (cada 10 minutos)
+setInterval(() => {
+  processedMessageIds.clear();
+  logger.debug("Cache de mensajes procesados limpiado");
+}, 10 * 60 * 1000);
+
+/**
  * Estructura del webhook de Meta para mensajes entrantes
  */
 interface MetaInteractiveReply {
@@ -246,6 +261,29 @@ async function processIncomingMessage(
       order,
       timestamp,
     } = message;
+
+    // === DEDUPLICACIÓN ===
+    // Verificar si este mensaje ya fue procesado
+    if (processedMessageIds.has(messageId)) {
+      logger.warn(
+        `Mensaje duplicado ignorado: ${messageId} (ya fue procesado anteriormente)`,
+      );
+      return;
+    }
+
+    // Verificar si el mensaje es muy viejo (posible reenvío de Meta)
+    const messageTimestamp = parseInt(timestamp, 10) * 1000; // Convertir a milisegundos
+    const messageAge = Date.now() - messageTimestamp;
+    
+    if (messageAge > MAX_MESSAGE_AGE_MS) {
+      logger.warn(
+        `Mensaje viejo ignorado: ${messageId} (edad: ${Math.round(messageAge / 1000)}s, máximo: ${MAX_MESSAGE_AGE_MS / 1000}s)`,
+      );
+      return;
+    }
+
+    // Marcar mensaje como procesado
+    processedMessageIds.add(messageId);
 
     logger.info(
       `Procesando mensaje ${messageId} de ${from} (tipo: ${type}, tenant: ${tenant.name})`,
